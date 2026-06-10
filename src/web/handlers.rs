@@ -37,11 +37,13 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
         && (claims.pwd_fp.is_none() || claims.pwd_fp == user.pwd_fp)
     {
         let mut out = auth_response_headers(&state, user, &claims.sub)?;
-        if session::needs_remint(&claims, session::now(), state.cfg.session_idle_hours) {
+        let reminted = session::needs_remint(&claims, session::now(), state.cfg.session_idle_hours);
+        if reminted {
             let next = session::remint(&claims, session::now(), state.cfg.session_idle_hours);
             let token = session::mint(&next, &state.keys)?;
             out.insert(header::SET_COOKIE, cookie_header(&token, &state.cfg)?);
         }
+        tracing::debug!(user = %claims.sub, reminted, "auth ok via session cookie");
         return Ok((StatusCode::OK, out).into_response());
     }
 
@@ -55,6 +57,7 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
     {
         if state.cache.check(&user, &pass) {
             let out = auth_response_headers(&state, u, &user)?;
+            tracing::debug!(user = %user, "auth ok via basic (verify cache hit)");
             return Ok((StatusCode::OK, out).into_response());
         }
         // Cache miss ⇒ a real bcrypt verify. Gate it on the limiter (a locked-out user is refused
@@ -76,12 +79,14 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
             let db = state.db.read().await; // re-acquire: the user may have changed mid-verify
             if let Some(u) = db.users.get(&user) {
                 let out = auth_response_headers(&state, u, &user)?;
+                tracing::debug!(user = %user, "auth ok via basic (password verified)");
                 return Ok((StatusCode::OK, out).into_response());
             }
         }
     }
 
     // 3) Bare 401 (nginx swallows subrequest body; browsers handled by error_page redirect).
+    tracing::debug!(ip = %client_ip(&headers), "auth denied → 401");
     Ok(StatusCode::UNAUTHORIZED.into_response())
 }
 
@@ -95,10 +100,12 @@ pub(super) async fn login_page(
     headers: HeaderMap,
     Query(q): Query<RdQuery>,
 ) -> Handler {
+    let rd = q.rd.unwrap_or_default();
+    tracing::debug!(rd = %rd, "GET login page");
     render_login(
         &state,
         &lang_of(&state, &headers, None, ""),
-        q.rd.unwrap_or_default(),
+        rd,
         None,
         String::new(),
     )
@@ -119,11 +126,13 @@ pub(super) async fn login_submit(
     Form(form): Form<LoginForm>,
 ) -> Handler {
     if !origin_ok(&headers) {
+        tracing::debug!(user = %form.username, "POST login rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
     let lang = lang_of(&state, &headers, None, ""); // no authenticated user yet
     let rd = form.rd.unwrap_or_default();
     let ip = client_ip(&headers);
+    tracing::debug!(user = %form.username, ip = %ip, "POST login attempt");
     if let Err(t) = state.limiter.check(&form.username, &ip) {
         let msg = match t {
             Throttle::Ip => tr(
@@ -188,6 +197,7 @@ pub(super) async fn login_submit(
     );
     let token = session::mint(&claims, &state.keys)?;
     let target = if valid_rd(&rd) { rd } else { "/".to_string() };
+    tracing::debug!(user = %form.username, target = %target, "login: session minted, redirecting");
     let mut resp = Redirect::to(&target).into_response();
     resp.headers_mut()
         .insert(header::SET_COOKIE, cookie_header(&token, &state.cfg)?);
@@ -203,6 +213,7 @@ pub(super) async fn logout_page(State(state): State<AppState>, headers: HeaderMa
     let db = state.db.read().await;
     let lang = lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub);
     drop(db);
+    tracing::debug!(user = %claims.sub, "GET logout confirm page");
     render(LogoutTemplate {
         lang,
         insecure_cookies: state.cfg.insecure_cookies,
@@ -213,8 +224,10 @@ pub(super) async fn logout_page(State(state): State<AppState>, headers: HeaderMa
 /// Clears the cookie and redirects to the login page (GET shows the confirm form).
 pub(super) async fn logout_submit(State(state): State<AppState>, headers: HeaderMap) -> Handler {
     if !origin_ok(&headers) {
+        tracing::debug!("POST logout rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
+    tracing::debug!("POST logout: clearing session cookie");
     let mut resp = Redirect::to(&format!("{}/login", state.cfg.base_path)).into_response();
     resp.headers_mut()
         .insert(header::SET_COOKIE, cookie_header("", &state.cfg)?);
@@ -230,6 +243,7 @@ pub(super) async fn account_page(State(state): State<AppState>, headers: HeaderM
     let Some(user) = db.users.get(&claims.sub) else {
         return Ok(redirect_to_login(&state, "/account"));
     };
+    tracing::debug!(user = %claims.sub, "GET account page");
     render(AccountTemplate {
         lang: lang_of(&state, &headers, Some(user), &claims.sub),
         insecure_cookies: state.cfg.insecure_cookies,
@@ -248,6 +262,7 @@ pub(super) async fn account_submit(
     Form(form): Form<HashMap<String, String>>,
 ) -> Handler {
     if !origin_ok(&headers) {
+        tracing::debug!("POST account rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
     let Some(claims) = current_claims(&headers, &state) else {
@@ -255,6 +270,11 @@ pub(super) async fn account_submit(
     };
     ensure_fresh(&state).await?;
     let user = claims.sub.clone();
+    tracing::debug!(
+        user = %user,
+        password_change = form.get("new_password").is_some_and(|s| !s.is_empty()),
+        "POST account self-service update"
+    );
     let lang = {
         let db = state.db.read().await;
         lang_of(&state, &headers, db.users.get(&user), &user)
@@ -345,6 +365,7 @@ pub(super) async fn admin_page(State(state): State<AppState>, headers: HeaderMap
         let db = state.db.read().await;
         lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub)
     };
+    tracing::debug!(admin = %claims.sub, "GET admin page");
     render_admin(&state, &lang, None, None).await
 }
 
@@ -372,6 +393,7 @@ pub(super) async fn admin_submit(
     Form(form): Form<HashMap<String, String>>,
 ) -> Handler {
     if !origin_ok(&headers) {
+        tracing::debug!("POST admin rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
     let claims = match require_superadmin(&state, &headers).await {
@@ -384,6 +406,7 @@ pub(super) async fn admin_submit(
         lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub)
     };
     let action = form.get("action").map(String::as_str).unwrap_or("");
+    tracing::debug!(admin = %claims.sub, action, "POST admin action");
     // Outer Err = internal failure (500 + log); inner Err = validation message for the page.
     let outcome = if action == "save" {
         save_all(&state, &lang, &form).await?

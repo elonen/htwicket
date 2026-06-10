@@ -22,6 +22,9 @@ pub struct Config {
     pub state_dir: PathBuf,
     /// Auto-generated + persisted to `{state_dir}/jwt_secret` when unset.
     pub jwt_secret: Option<String>,
+    /// Raise the log level from INFO to DEBUG: per-request + file-I/O traces (never secrets).
+    #[serde(default)]
+    pub debug: bool,
     /// Drops the Secure cookie flag (plain-http demo). Logs a loud startup warning.
     #[serde(default)]
     pub insecure_cookies: bool,
@@ -151,6 +154,10 @@ pub struct Overrides {
     #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_dir: Option<PathBuf>,
+    /// Raise the log level to DEBUG (per-request + file-I/O traces)
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug: Option<bool>,
     /// Drop the cookie Secure flag (plain-http demo only)
     #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -313,6 +320,7 @@ mod tests {
                 session_max_days: Some(3),
                 password_hash: Some(PasswordAlgo::Argon2id),
                 http_accept_language: Some(false),
+                debug: Some(true),
                 ..Overrides::default()
             };
             let cfg = load(Path::new("htwicket.toml"), &cli)
@@ -330,6 +338,7 @@ mod tests {
             assert_eq!(cfg.session_max_days, 3);
             assert_eq!(cfg.password_hash, PasswordAlgo::Argon2id); // CLI beats env beats file
             assert!(!cfg.http_accept_language); // CLI override of the true default
+            assert!(cfg.debug); // CLI flag turns DEBUG tracing on
             Ok(())
         });
     }
@@ -346,6 +355,7 @@ mod tests {
             assert_eq!(cfg.listen, d_listen());
             assert_eq!(cfg.session_max_days, d_session_max_days());
             assert!(!cfg.insecure_cookies);
+            assert!(!cfg.debug); // defaults off (INFO)
             assert!(cfg.http_accept_language); // defaults on
             assert_eq!(cfg.default_lang, d_default_lang());
             Ok(())

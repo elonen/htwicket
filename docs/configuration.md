@@ -35,6 +35,7 @@ Defaults in parentheses. See the example for inline guidance.
 | `sidecar_file` | fields file (default: `.htwicket.toml` next to `htpasswd_file`) |
 | `state_dir` (`/var/lib/htwicket`) | holds the auto-generated `jwt_secret` |
 | `jwt_secret` | HS256 key; auto-generated + persisted under `state_dir` if unset |
+| `debug` (`false`) | raise the log level INFO→DEBUG: traces every request + file read/write to stdout (never secrets) |
 | `insecure_cookies` (`false`) | drop the cookie `Secure` flag — plain-http demo only; see [security.md](security.md) |
 | `basic_auth_passthrough` (`false`) | accept `Authorization: Basic` on `/auth` ([auth-flow.md](auth-flow.md)) |
 | `upgrade_hash_on_login` (`false`) | rehash an entry not in `password_hash` to it on successful login |

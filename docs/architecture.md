@@ -16,14 +16,14 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 | password verify (legacy in) | `htpasswd-verify` (`$apr1$`, `{SHA}`) + `pwhash` (DES, `$1$/$5$/$6$`) + `argon2` |
 | password write (configurable out) | `bcrypt` (default) or `argon2` (`password_hash` config) |
 | i18n | gettext `po/*.po`, compiled by `build.rs` into a static table |
-| logging | `tracing` → stdout (journald/docker) |
+| logging | `tracing` → stdout (journald/docker); INFO, or DEBUG when `debug = true` |
 
 ## Module map (`src/`)
 
 | file | responsibility |
 |---|---|
-| `main.rs` | tracing init → `cli::run` |
-| `cli.rs` | clap: `serve` (default) + offline `user` subcommands |
+| `main.rs` | thin entry → `cli::run` |
+| `cli.rs` | clap: `serve` (default) + offline `user` subcommands; tracing init (`debug` → DEBUG) |
 | `config.rs` | load + layer + validate `Config` |
 | `state.rs` | in-memory `UserDb` over `.htpasswd` + sidecar; reload, `flock`, atomic writes |
 | `authn.rs` | password verify, Basic-verify cache, brute-force limiter |

@@ -115,7 +115,10 @@ pub fn load_or_create_secret(cfg: &crate::config::Config) -> anyhow::Result<Vec<
     }
     let path = cfg.state_dir.join("jwt_secret");
     match fs::read(&path) {
-        Ok(bytes) => Ok(bytes),
+        Ok(bytes) => {
+            tracing::debug!(path = %path.display(), "loaded jwt_secret from state dir");
+            Ok(bytes)
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             fs::create_dir_all(&cfg.state_dir)
                 .with_context(|| format!("creating state dir {}", cfg.state_dir.display()))?;

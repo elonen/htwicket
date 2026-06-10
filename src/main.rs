@@ -12,6 +12,6 @@ mod state;
 mod web;
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().init();
+    // tracing is initialized inside cli::run, once the `debug` config knob is known.
     cli::run()
 }

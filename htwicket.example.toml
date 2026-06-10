@@ -9,6 +9,9 @@ htpasswd_file = "/var/www/.htpasswd"
 # state_dir = "/var/lib/htwicket"            # holds auto-generated jwt_secret
 # jwt_secret = "..."                         # set explicitly for multi-instance / key control
 
+# debug = false                 # true raises the log level INFO→DEBUG: traces every request and
+#                               # file read/write to stdout (never secrets). Also --debug / HTWICKET_DEBUG.
+
 insecure_cookies = false        # true only behind plain http (demo); drops Secure flag
 basic_auth_passthrough = false  # true = accept Authorization: Basic on /auth (legacy scripts)
 # upgrade_hash_on_login = false # rehash entries not in password_hash at successful login

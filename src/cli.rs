@@ -63,10 +63,22 @@ pub enum UserAction {
 pub fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let cfg = crate::config::load(&cli.config, &cli.overrides)?;
+    init_tracing(cfg.debug);
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => crate::web::serve(cfg),
         Command::User { action } => run_user(cfg, action),
     }
+}
+
+/// stdout subscriber; INFO by default, DEBUG when `debug = true` (config/env/`--debug`) for
+/// per-request and file-I/O traces.
+fn init_tracing(debug: bool) {
+    let level = if debug {
+        tracing::Level::DEBUG
+    } else {
+        tracing::Level::INFO
+    };
+    tracing_subscriber::fmt().with_max_level(level).init();
 }
 
 /// Offline user management against the state files (under the shared flock). Works even when

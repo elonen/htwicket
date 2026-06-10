@@ -97,6 +97,12 @@ impl UserDb {
         self.sidecar = sidecar;
         self.htpasswd_mtime = mtime(&self.htpasswd_path);
         self.sidecar_mtime = mtime(&self.sidecar_path);
+        tracing::debug!(
+            htpasswd = %self.htpasswd_path.display(),
+            sidecar = %self.sidecar_path.display(),
+            users = self.users.len(),
+            "loaded user db from disk"
+        );
         if self.users.is_empty() {
             tracing::warn!("no users found — run `htwicket user add <name>`");
         }
@@ -126,6 +132,7 @@ impl UserDb {
         let mut entries = parse_htpasswd(&read_opt(&self.htpasswd_path)?.unwrap_or_default());
         entries.insert(user.to_string(), bcrypt_hash.to_string());
         atomic_write(&self.htpasswd_path, &serialize_htpasswd(&entries))?;
+        tracing::debug!(user, path = %self.htpasswd_path.display(), "wrote password");
         self.reload()
     }
 
@@ -143,6 +150,13 @@ impl UserDb {
             table.insert(k.clone(), v.clone());
         }
         atomic_write(&self.sidecar_path, &toml::to_string_pretty(&sidecar)?)?;
+        // Field names only — values may hold PII (e.g. email).
+        tracing::debug!(
+            user,
+            fields = ?fields.keys().collect::<Vec<_>>(),
+            path = %self.sidecar_path.display(),
+            "wrote sidecar fields"
+        );
         self.reload()
     }
 
@@ -158,6 +172,7 @@ impl UserDb {
         if sidecar.users.remove(user).is_some() {
             atomic_write(&self.sidecar_path, &toml::to_string_pretty(&sidecar)?)?;
         }
+        tracing::debug!(user, "deleted user");
         self.reload()
     }
 
@@ -180,6 +195,7 @@ impl UserDb {
             sidecar.users.insert(new.to_string(), table);
             atomic_write(&self.sidecar_path, &toml::to_string_pretty(&sidecar)?)?;
         }
+        tracing::debug!(old, new, "renamed user");
         self.reload()
     }
 

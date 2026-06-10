@@ -93,9 +93,94 @@ pub fn load(path: &Path) -> anyhow::Result<Config> {
         .merge(Toml::file(path))
         .merge(Env::prefixed("HTWICKET_").split("__"))
         .extract()?;
-    // TODO: validate (field defaults match types, required only on non-bools, username-safe
-    // field names) and compile all CEL exprs (crate::cel) — fail startup on any error.
+    validate(&cfg)?;
+    // CEL exprs are compiled by `serve` (crate::web), not here: the offline `user` subcommands
+    // must keep working for lockout recovery even when a header/claim expr is broken.
     Ok(cfg)
+}
+
+/// Static config invariants — fail startup loudly rather than surprise at request time.
+fn validate(cfg: &Config) -> anyhow::Result<()> {
+    if !cfg.base_path.starts_with('/') {
+        anyhow::bail!("base_path must start with '/' (got {:?})", cfg.base_path);
+    }
+    for (name, spec) in &cfg.fields {
+        // Field names are referenced as `fields.<name>` in CEL, so they must be CEL identifiers.
+        if !is_ident(name) {
+            anyhow::bail!(
+                "field name `{name}` must be a CEL identifier ([A-Za-z_][A-Za-z0-9_]*)"
+            );
+        }
+        if spec.type_ == FieldType::Bool && spec.required {
+            anyhow::bail!("field `{name}`: `required` applies only to non-bool fields");
+        }
+        if let Some(default) = &spec.default {
+            let ok = match spec.type_ {
+                FieldType::Bool => default.is_bool(),
+                FieldType::String | FieldType::Email => default.is_str(),
+            };
+            if !ok {
+                anyhow::bail!("field `{name}`: default does not match type {:?}", spec.type_);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Each test supplies a complete config body (top-level keys must precede any [table]).
+    fn parse(body: &str) -> Config {
+        toml::from_str(body).unwrap()
+    }
+    const REQUIRED: &str = "htpasswd_file = \"/tmp/.htpasswd\"\n";
+    const SUPERADMINS: &str = "[superadmins]\nexpr = \"false\"\n";
+
+    #[test]
+    fn valid_config_passes() {
+        let cfg = parse(&format!(
+            "{REQUIRED}{SUPERADMINS}[fields.is_admin]\ntype = \"bool\"\ndefault = false\n"
+        ));
+        assert!(validate(&cfg).is_ok());
+    }
+
+    #[test]
+    fn bool_field_cannot_be_required() {
+        let cfg = parse(&format!(
+            "{REQUIRED}{SUPERADMINS}[fields.is_admin]\ntype = \"bool\"\nrequired = true\n"
+        ));
+        assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn default_must_match_type() {
+        let cfg = parse(&format!(
+            "{REQUIRED}{SUPERADMINS}[fields.is_admin]\ntype = \"bool\"\ndefault = \"yes\"\n"
+        ));
+        assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn field_name_must_be_cel_identifier() {
+        let cfg = parse(&format!(
+            "{REQUIRED}{SUPERADMINS}[fields.\"x-y\"]\ntype = \"string\"\n"
+        ));
+        assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn base_path_must_be_absolute() {
+        let cfg = parse(&format!("base_path = \"htwicket\"\n{REQUIRED}{SUPERADMINS}"));
+        assert!(validate(&cfg).is_err());
+    }
 }
 
 fn d_listen() -> String { "127.0.0.1:8088".into() }

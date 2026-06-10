@@ -14,7 +14,7 @@ htadmin-style `.htpasswd` GUIs:
 - Single static binary; config from TOML + env vars; offline CLI for user management and
   lockout recovery.
 
-Status: **design phase** — see [PLAN.md](PLAN.md) for the full architecture.
+See [PLAN.md](PLAN.md) for the full architecture.
 
 ## Quick shape
 

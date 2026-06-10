@@ -1,6 +1,6 @@
 //! End-to-end tests: spawn the real `htwicket serve` binary against tempdir state files and
 //! drive it over HTTP with reqwest. Covers the login flow, /auth header outputs, Basic
-//! passthrough, lockout, the admin gate + CRUD, and `user check` exit codes (PLAN "Testing").
+//! passthrough, lockout, the admin gate + CRUD, and `user check` exit codes (docs/architecture.md).
 
 use std::io::Write;
 use std::net::TcpListener;

@@ -1,5 +1,5 @@
 //! Password verification (legacy formats in, bcrypt out), Basic-passthrough verify cache,
-//! and login brute-force limiting. See PLAN.md "Security decisions".
+//! and login brute-force limiting. See docs/security.md.
 
 /// Verify a password against any supported .htpasswd hash.
 ///

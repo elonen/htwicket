@@ -1,4 +1,4 @@
-//! Config: TOML file → env override (HTWICKET_, `__` nesting) → CLI. See PLAN.md for full example.
+//! Config: TOML file → env override (HTWICKET_, `__` nesting) → CLI. See htwicket.example.toml + docs/configuration.md.
 //! CEL exprs are compiled at load time — invalid expr is a startup failure, never a request-time one.
 
 use std::collections::BTreeMap;

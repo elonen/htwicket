@@ -39,8 +39,7 @@ clean:
 POT := po/htwicket.pot
 # Single xgettext pass over Rust + templates. C mode finds `tr(...)` in both; tr:1 picks the
 # template msgid (1st arg) and tr:2 the Rust msgid (2nd arg, after the locale) — non-string
-# args are ignored. C mode prints a few benign "unterminated string/character" warnings on
-# Rust comments/strings; they do not affect extraction (real problems still surface).
+# args are ignored.
 I18N_SOURCES := $(shell find src -name '*.rs') $(wildcard templates/*.html)
 
 i18n: i18n-extract i18n-update
@@ -48,10 +47,15 @@ i18n: i18n-extract i18n-update
 i18n-extract: $(POT)
 
 $(POT): $(I18N_SOURCES)
-	xgettext --language=C --from-code=UTF-8 --sort-by-file \
+	@# C mode misreads apostrophes/quotes in Rust+HTML comments as "unterminated string/character"
+	@# warnings — harmless (extraction is correct). Drop just those lines, keep every other
+	@# warning, and preserve xgettext's exit code.
+	@xgettext --language=C --from-code=UTF-8 --sort-by-file \
 		--keyword=tr:1 --keyword=tr:2 \
 		--package-name=htwicket --copyright-holder="htwicket authors" \
-		-o $@ $(I18N_SOURCES)
+		-o $@ $(I18N_SOURCES) 2>$@.err; rc=$$?; \
+		grep -vE 'warning: unterminated (string literal|character constant)' $@.err >&2 || true; \
+		rm -f $@.err; exit $$rc
 	@# msgids are ASCII, so xgettext leaves charset=CHARSET; pin it to UTF-8 so msginit-derived
 	@# .po files (and accented msgstr) are UTF-8. Temp+mv keeps it portable (BSD/GNU sed differ).
 	@sed 's/charset=CHARSET/charset=UTF-8/' $@ > $@.tmp && mv $@.tmp $@

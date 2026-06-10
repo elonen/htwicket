@@ -1,7 +1,5 @@
 /* ============================================================================
-   htwicket.css — shared stylesheet for the htwicket auth gateway GUI
-   "Quiet infrastructure": cool near-grayscale, one restrained violet accent,
-   system sans for text + system mono for identifiers/data.
+   htwicket.css — shared stylesheet for the htwicket auth gateway GUI.
 
    Self-contained: no @import, no web fonts, no JS dependency. Ships embedded
    in the binary (inline <style> via include_str!). Works with JS disabled and

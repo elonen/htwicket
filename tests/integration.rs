@@ -62,7 +62,11 @@ default = false
 [fields.display_name]
 type = "string"
 default = ""
-user_editable = true
+user_editable_expr = "true"
+[fields.can_upload]
+type = "bool"
+default = true
+user_visible = true
 [headers.X-Remote-User-Is-Admin]
 type = "bool"
 expr = "fields.is_admin"
@@ -278,6 +282,63 @@ fn admin_gate_and_add_user() {
         .unwrap();
     assert_eq!(r.status(), 200);
     assert_eq!(r.headers().get("x-remote-user-is-admin").unwrap(), "true");
+}
+
+#[test]
+fn account_visibility_and_editability() {
+    let srv = spawn("");
+    let c = client();
+    c.post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+
+    // /account for bob: display_name is editable (input), can_upload is read-only (no input),
+    // is_admin is neither visible nor editable (absent entirely).
+    let page = c
+        .get(format!("{}/account", srv.base))
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(
+        page.contains(r#"name="f_display_name""#),
+        "editable field missing an input"
+    );
+    assert!(
+        !page.contains(r#"name="f_can_upload""#),
+        "read-only field should have no input"
+    );
+    assert!(
+        page.contains("can upload"),
+        "user_visible field should still be shown"
+    );
+    assert!(
+        !page.contains("is admin"),
+        "non-visible field leaked onto /account"
+    );
+
+    // bob tries to grant himself is_admin (not editable for him) while editing display_name.
+    c.post(format!("{}/account", srv.base))
+        .form(&[
+            ("f_display_name", "Bobby"),
+            ("f_is_admin", "on"),
+            ("f_can_upload", "on"),
+        ])
+        .send()
+        .unwrap();
+
+    // Editable change took; the non-editable is_admin was ignored (still not a superadmin).
+    let auth = reqwest::blocking::Client::new()
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(auth.headers().get("x-remote-user-name").unwrap(), "Bobby");
+    assert_eq!(
+        auth.headers().get("x-remote-user-is-admin").unwrap(),
+        "false"
+    );
 }
 
 #[test]

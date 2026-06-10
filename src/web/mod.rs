@@ -30,6 +30,8 @@ struct Compiled {
     headers: Vec<(HeaderName, CompiledExpr)>,
     jwt_claims: Vec<(String, CompiledExpr)>,
     superadmin: CompiledExpr,
+    /// Per-field `user_editable_expr` (bool over {username, fields.*}) — may a given user edit it.
+    field_editable: BTreeMap<String, CompiledExpr>,
 }
 
 #[derive(Clone)]
@@ -86,10 +88,17 @@ fn compile_all(cfg: &Config) -> anyhow::Result<Compiled> {
             cel::compile(&spec.expr, spec.type_).with_context(|| format!("jwt-claims.{name}"))?;
         jwt_claims.push((name.clone(), expr));
     }
+    let mut field_editable = BTreeMap::new();
+    for (name, spec) in &cfg.fields {
+        let expr = cel::compile(&spec.user_editable_expr, FieldType::Bool)
+            .with_context(|| format!("fields.{name}.user_editable_expr"))?;
+        field_editable.insert(name.clone(), expr);
+    }
     Ok(Compiled {
         headers,
         jwt_claims,
         superadmin,
+        field_editable,
     })
 }
 
@@ -295,13 +304,13 @@ async fn account_page(State(state): State<AppState>, headers: HeaderMap) -> Hand
         lang: lang_of(&headers),
         insecure_cookies: state.cfg.insecure_cookies,
         username: claims.sub.clone(),
-        fields: field_views(&state.cfg, &user.fields, false),
+        fields: account_field_views(&state, user, &claims.sub),
         error: None,
         notice: None,
     })
 }
 
-/// Own password change (old pw required) + user_editable fields.
+/// Own password change (old pw required) + fields this user may edit (user_editable_expr).
 async fn account_submit(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -346,12 +355,29 @@ async fn account_submit(
         }
     }
 
-    // Editable fields.
+    // Editable fields — only those `user_editable_expr` grants this user (evaluated against
+    // their current fields). Snapshot so we can drop the read lock before writing.
     if error.is_none() {
-        let updates = collect_fields(&state.cfg, &form, false);
-        if !updates.is_empty() {
-            state.db.write().await.write_fields(&user, &updates)?;
-            notice.get_or_insert_with(|| tr(&lang, "Saved."));
+        let snapshot = state
+            .db
+            .read()
+            .await
+            .users
+            .get(&user)
+            .map(|u| u.fields.clone());
+        if let Some(fields) = snapshot {
+            let snap = User {
+                hash: None,
+                pwd_fp: None,
+                fields,
+            };
+            let updates = collect_fields(&state.cfg, &form, |name| {
+                field_editable(&state, name, &snap, &user)
+            });
+            if !updates.is_empty() {
+                state.db.write().await.write_fields(&user, &updates)?;
+                notice.get_or_insert_with(|| tr(&lang, "Saved."));
+            }
         }
     }
 
@@ -359,7 +385,7 @@ async fn account_submit(
     let fields = db
         .users
         .get(&user)
-        .map(|u| field_views(&state.cfg, &u.fields, false))
+        .map(|u| account_field_views(&state, u, &user))
         .unwrap_or_default();
     render(AccountTemplate {
         lang,
@@ -467,7 +493,7 @@ async fn apply_admin_action(
             } else if action == "add" {
                 return Err(tr(lang, "A password is required to add a user."));
             }
-            let updates = collect_fields(&state.cfg, form, true);
+            let updates = collect_fields(&state.cfg, form, |_| true);
             if !updates.is_empty() {
                 state
                     .db
@@ -501,14 +527,14 @@ async fn render_admin(
         .map(|(name, u)| UserRow {
             name: name.clone(),
             has_password: u.hash.is_some(),
-            fields: field_views(&state.cfg, &u.fields, true),
+            fields: admin_field_views(&state.cfg, &u.fields),
         })
         .collect();
     render(AdminTemplate {
         lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
         users,
-        add_fields: field_views(&state.cfg, &BTreeMap::new(), true),
+        add_fields: admin_field_views(&state.cfg, &BTreeMap::new()),
         error,
         notice,
     })
@@ -523,47 +549,78 @@ fn render_login(state: &AppState, lang: &str, rd: String, error: Option<String>)
     })
 }
 
-/// Build form `FieldView`s. `all_editable` (admin) makes every field editable; otherwise only
-/// `user_editable` ones are, the rest shown read-only.
-fn field_views(
-    cfg: &Config,
-    values: &BTreeMap<String, toml::Value>,
-    all_editable: bool,
-) -> Vec<FieldView> {
+fn make_field_view(
+    name: &str,
+    spec: &crate::config::FieldSpec,
+    value: Option<&toml::Value>,
+    editable: bool,
+) -> FieldView {
+    FieldView {
+        name: name.to_string(),
+        label: name.replace('_', " "),
+        is_bool: spec.type_ == FieldType::Bool,
+        input_type: if spec.type_ == FieldType::Email {
+            "email"
+        } else {
+            "text"
+        },
+        value: match value {
+            Some(toml::Value::String(s)) => s.clone(),
+            Some(other) => other.to_string(),
+            None => String::new(),
+        },
+        checked: value.and_then(toml::Value::as_bool).unwrap_or(false),
+        editable,
+    }
+}
+
+/// Admin sees and may edit every schema field.
+fn admin_field_views(cfg: &Config, values: &BTreeMap<String, toml::Value>) -> Vec<FieldView> {
     cfg.fields
         .iter()
-        .map(|(name, spec)| {
-            let v = values.get(name);
-            FieldView {
-                name: name.clone(),
-                label: name.replace('_', " "),
-                is_bool: spec.type_ == FieldType::Bool,
-                input_type: if spec.type_ == FieldType::Email {
-                    "email"
-                } else {
-                    "text"
-                },
-                value: match v {
-                    Some(toml::Value::String(s)) => s.clone(),
-                    Some(other) => other.to_string(),
-                    None => String::new(),
-                },
-                checked: v.and_then(toml::Value::as_bool).unwrap_or(false),
-                editable: all_editable || spec.user_editable,
-            }
+        .map(|(name, spec)| make_field_view(name, spec, values.get(name), true))
+        .collect()
+}
+
+/// /account view: only fields visible to this user (user_visible, or editable-for-them).
+/// Editability is the per-user `user_editable_expr` (fail closed on eval error).
+fn account_field_views(state: &AppState, user: &User, username: &str) -> Vec<FieldView> {
+    state
+        .cfg
+        .fields
+        .iter()
+        .filter_map(|(name, spec)| {
+            let editable = field_editable(state, name, user, username);
+            (spec.user_visible || editable)
+                .then(|| make_field_view(name, spec, user.fields.get(name), editable))
         })
         .collect()
 }
 
-/// Read submitted form values for editable schema fields (`f_<name>`). Bools: present = true.
+/// May `username` edit `field` right now? Evaluates the field's user_editable_expr; any miss or
+/// eval error is treated as not-editable (fail closed).
+fn field_editable(state: &AppState, field: &str, user: &User, username: &str) -> bool {
+    state
+        .compiled
+        .field_editable
+        .get(field)
+        .is_some_and(|expr| {
+            matches!(
+                cel::eval(expr, user, username),
+                Ok(toml::Value::Boolean(true))
+            )
+        })
+}
+
+/// Read submitted `f_<name>` values for the given schema fields. Bools: present = true.
 fn collect_fields(
     cfg: &Config,
     form: &HashMap<String, String>,
-    all_editable: bool,
+    accept: impl Fn(&str) -> bool,
 ) -> BTreeMap<String, toml::Value> {
     let mut out = BTreeMap::new();
     for (name, spec) in &cfg.fields {
-        if !all_editable && !spec.user_editable {
+        if !accept(name) {
             continue;
         }
         let key = format!("f_{name}");

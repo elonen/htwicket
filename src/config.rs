@@ -75,9 +75,14 @@ pub struct FieldSpec {
     pub default: Option<toml::Value>,
     #[serde(default)]
     pub required: bool,
-    /// Editable by the user themself on /account (default: admin-only).
+    /// Shown (read-only) to the user on their own /account. `user_editable_expr` evaluating
+    /// true for a user implies visibility for that user (you can edit only what you can see).
     #[serde(default)]
-    pub user_editable: bool,
+    pub user_visible: bool,
+    /// CEL (bool) over {username, fields.*}: may THIS user edit the field on /account?
+    /// Default "false" (admin-only). e.g. "true" (anyone), or "fields.is_admin".
+    #[serde(default = "d_false_expr")]
+    pub user_editable_expr: String,
 }
 
 #[derive(Deserialize)]
@@ -203,4 +208,7 @@ fn d_session_hours() -> u32 {
 }
 fn d_session_max_days() -> u32 {
     7
+}
+fn d_false_expr() -> String {
+    "false".into()
 }

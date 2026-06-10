@@ -60,11 +60,13 @@ expr = "username == 'admin' || fields.is_admin"   # User is superadmin if this C
 type = "bool"                      # bool | string | email
 default = false
 # required = false                 # non-bools only
-# user_editable = false            # shown editable on /account
+# user_visible = false             # show (read-only) on the user's own /account
+# user_editable_expr = "false"     # CEL bool over {username, fields.*}: may THIS user edit it?
+                                   # default "false" (admin-only); editable implies visible
 
 [fields.display_name]
 type = "string"
-user_editable = true
+user_editable_expr = "true"        # anyone may edit their own display_name
 
 [fields.can_upload]
 type = "bool"
@@ -93,7 +95,8 @@ Runtime eval error → 500 + log, fail closed. `X-Remote-User-Id: <username>` al
   401: bare (nginx swallows subrequest headers anyway; browsers handled by error_page redirect).
 - `GET|POST /login` — form → JWT cookie → 303 to `rd` (validated: relative, starts `/`, no `//`).
 - `GET|POST /logout` — GET shows confirm page w/ POST button (safe link target); POST clears cookie.
-- `GET|POST /account` — own password change (old pw required) + `user_editable` fields.
+- `GET|POST /account` — own password change (old pw required) + visible fields (`user_visible` /
+  per-user `user_editable_expr`); editable ones as inputs, the rest read-only.
 - `GET|POST /admin` — superadmins only: user table, add/delete user, set password, edit all fields. No pagination.
 - `GET /healthz` — unauthenticated 200.
 

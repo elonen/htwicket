@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build test check test-and-check clean \
+.PHONY: build test check test-and-check clean demo \
         i18n i18n-extract i18n-update i18n-init i18n-stats \
         debian-local debian-docker debian-docker-one
 
@@ -20,6 +20,16 @@ test-and-check: test check
 clean:
 	cargo clean
 	rm -rf dist_deb
+
+# ---- Demo container ------------------------------------------------------
+#
+# Build + run the throwaway demo: htwicket behind nginx guarding a PHP page that
+# echoes the forwarded headers + decoded JWT. Browse http://localhost:8080/
+# (admin/admin, alice/alice, bob/<printed>). Ctrl-C to stop. See demo/README.md.
+
+demo:
+	DOCKER_BUILDKIT=1 docker build -f demo/Dockerfile -t htwicket-demo .
+	docker run --rm -p 8080:80 htwicket-demo
 
 # ---- Internationalization (gettext) --------------------------------------
 #

@@ -38,6 +38,9 @@ sudo systemctl enable --now htwicket   # or: htwicket serve
 Then point nginx at it — see [docs/deployment.md](docs/deployment.md). Annotated config:
 [htwicket.example.toml](htwicket.example.toml).
 
+Just want to try it out? `make demo` builds a throwaway Docker container — htwicket behind
+nginx guarding a demo app — at <http://localhost:8080/>. See [demo/README.md](demo/README.md).
+
 ## Documentation
 
 - [auth-flow.md](docs/auth-flow.md) — how a request is authenticated, step by step; the session JWT lifecycle.

@@ -25,8 +25,6 @@ use templates::{
     AccountTemplate, AdminTemplate, FieldView, LoginTemplate, LogoutTemplate, UserRow,
 };
 
-const LANG: &str = "en"; // per-request locale arrives with the i18n catalogs (step 8)
-
 /// CEL programs + parsed header names, compiled once at startup (bad expr / header name = fail).
 struct Compiled {
     headers: Vec<(HeaderName, CompiledExpr)>,
@@ -178,8 +176,12 @@ struct RdQuery {
     rd: Option<String>,
 }
 
-async fn login_page(State(state): State<AppState>, Query(q): Query<RdQuery>) -> Handler {
-    render_login(&state, q.rd.unwrap_or_default(), None)
+async fn login_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<RdQuery>,
+) -> Handler {
+    render_login(&state, &lang_of(&headers), q.rd.unwrap_or_default(), None)
 }
 
 #[derive(Deserialize)]
@@ -199,10 +201,11 @@ async fn login_submit(
     if !origin_ok(&headers) {
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
+    let lang = lang_of(&headers);
     let rd = form.rd.unwrap_or_default();
     let ip = client_ip(&headers);
     if let Err(msg) = state.limiter.check(&form.username, &ip) {
-        return render_login(&state, rd, Some(msg));
+        return render_login(&state, &lang, rd, Some(msg));
     }
     ensure_fresh(&state).await?;
 
@@ -215,7 +218,12 @@ async fn login_submit(
         .is_some_and(|h| crate::authn::verify_password(&form.password, h));
     if !good {
         state.limiter.record_failure(&form.username, &ip);
-        return render_login(&state, rd, Some(tr("Invalid username or password.")));
+        return render_login(
+            &state,
+            &lang,
+            rd,
+            Some(tr(&lang, "Invalid username or password.")),
+        );
     }
     state.limiter.record_success(&form.username, &ip);
 
@@ -256,9 +264,9 @@ async fn login_submit(
     Ok(resp)
 }
 
-async fn logout_page(State(state): State<AppState>) -> Handler {
+async fn logout_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
     render(LogoutTemplate {
-        lang: LANG,
+        lang: lang_of(&headers),
         insecure_cookies: state.cfg.insecure_cookies,
     })
 }
@@ -284,7 +292,7 @@ async fn account_page(State(state): State<AppState>, headers: HeaderMap) -> Hand
         return Ok(redirect_to_login(&state, "/account"));
     };
     render(AccountTemplate {
-        lang: LANG,
+        lang: lang_of(&headers),
         insecure_cookies: state.cfg.insecure_cookies,
         username: claims.sub.clone(),
         fields: field_views(&state.cfg, &user.fields, false),
@@ -306,6 +314,7 @@ async fn account_submit(
         return Ok(redirect_to_login(&state, "/account"));
     };
     ensure_fresh(&state).await?;
+    let lang = lang_of(&headers);
     let user = claims.sub.clone();
 
     let mut error = None;
@@ -327,13 +336,13 @@ async fn account_submit(
             .as_deref()
             .is_some_and(|h| crate::authn::verify_password(old, h));
         if !old_ok {
-            error = Some(tr("Current password is incorrect."));
+            error = Some(tr(&lang, "Current password is incorrect."));
         } else if newpw.len() < state.cfg.min_password_len {
-            error = Some(tr("New password is too short."));
+            error = Some(tr(&lang, "New password is too short."));
         } else {
             let hash = crate::authn::hash_password(newpw)?;
             state.db.write().await.write_password(&user, &hash)?;
-            notice = Some(tr("Password changed."));
+            notice = Some(tr(&lang, "Password changed."));
         }
     }
 
@@ -342,7 +351,7 @@ async fn account_submit(
         let updates = collect_fields(&state.cfg, &form, false);
         if !updates.is_empty() {
             state.db.write().await.write_fields(&user, &updates)?;
-            notice.get_or_insert_with(|| tr("Saved."));
+            notice.get_or_insert_with(|| tr(&lang, "Saved."));
         }
     }
 
@@ -353,7 +362,7 @@ async fn account_submit(
         .map(|u| field_views(&state.cfg, &u.fields, false))
         .unwrap_or_default();
     render(AccountTemplate {
-        lang: LANG,
+        lang,
         insecure_cookies: state.cfg.insecure_cookies,
         username: user,
         fields,
@@ -373,7 +382,7 @@ async fn admin_page(State(state): State<AppState>, headers: HeaderMap) -> Handle
             return Ok(StatusCode::FORBIDDEN.into_response());
         }
     }
-    render_admin(&state, None, None).await
+    render_admin(&state, &lang_of(&headers), None, None).await
 }
 
 /// Superadmins only: add/delete user, set password, edit all fields.
@@ -396,14 +405,15 @@ async fn admin_submit(
         }
     }
 
+    let lang = lang_of(&headers);
     let action = form.get("action").map(String::as_str).unwrap_or("");
     let username = form.get("username").cloned().unwrap_or_default();
     let new_password = form.get("new_password").filter(|s| !s.is_empty());
 
-    let outcome = apply_admin_action(&state, action, &username, new_password, &form).await;
+    let outcome = apply_admin_action(&state, &lang, action, &username, new_password, &form).await;
     match outcome {
-        Ok(notice) => render_admin(&state, None, Some(notice)).await,
-        Err(msg) => render_admin(&state, Some(msg), None).await,
+        Ok(notice) => render_admin(&state, &lang, None, Some(notice)).await,
+        Err(msg) => render_admin(&state, &lang, Some(msg), None).await,
     }
 }
 
@@ -411,6 +421,7 @@ async fn admin_submit(
 /// only from render_admin; expected validation failures are Err(String) shown in the page.
 async fn apply_admin_action(
     state: &AppState,
+    lang: &str,
     action: &str,
     username: &str,
     new_password: Option<&String>,
@@ -424,11 +435,11 @@ async fn apply_admin_action(
                 .await
                 .delete_user(username)
                 .map_err(|e| e.to_string())?;
-            Ok(tr("User deleted."))
+            Ok(tr(lang, "User deleted."))
         }
         "add" | "save" => {
             if !UserDb::valid_username(username) {
-                return Err(tr("Invalid username."));
+                return Err(tr(lang, "Invalid username."));
             }
             if action == "add" {
                 let exists = state
@@ -439,12 +450,12 @@ async fn apply_admin_action(
                     .get(username)
                     .is_some_and(|u| u.hash.is_some());
                 if exists {
-                    return Err(tr("User already exists."));
+                    return Err(tr(lang, "User already exists."));
                 }
             }
             if let Some(pw) = new_password {
                 if pw.len() < state.cfg.min_password_len {
-                    return Err(tr("Password is too short."));
+                    return Err(tr(lang, "Password is too short."));
                 }
                 let hash = crate::authn::hash_password(pw).map_err(|e| e.to_string())?;
                 state
@@ -454,7 +465,7 @@ async fn apply_admin_action(
                     .write_password(username, &hash)
                     .map_err(|e| e.to_string())?;
             } else if action == "add" {
-                return Err(tr("A password is required to add a user."));
+                return Err(tr(lang, "A password is required to add a user."));
             }
             let updates = collect_fields(&state.cfg, form, true);
             if !updates.is_empty() {
@@ -466,18 +477,23 @@ async fn apply_admin_action(
                     .map_err(|e| e.to_string())?;
             }
             Ok(if action == "add" {
-                tr("User added.")
+                tr(lang, "User added.")
             } else {
-                tr("Saved.")
+                tr(lang, "Saved.")
             })
         }
-        _ => Err(tr("Unknown action.")),
+        _ => Err(tr(lang, "Unknown action.")),
     }
 }
 
 // ---- View building ----
 
-async fn render_admin(state: &AppState, error: Option<String>, notice: Option<String>) -> Handler {
+async fn render_admin(
+    state: &AppState,
+    lang: &str,
+    error: Option<String>,
+    notice: Option<String>,
+) -> Handler {
     let db = state.db.read().await;
     let users = db
         .users
@@ -489,7 +505,7 @@ async fn render_admin(state: &AppState, error: Option<String>, notice: Option<St
         })
         .collect();
     render(AdminTemplate {
-        lang: LANG,
+        lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
         users,
         add_fields: field_views(&state.cfg, &BTreeMap::new(), true),
@@ -498,9 +514,9 @@ async fn render_admin(state: &AppState, error: Option<String>, notice: Option<St
     })
 }
 
-fn render_login(state: &AppState, rd: String, error: Option<String>) -> Handler {
+fn render_login(state: &AppState, lang: &str, rd: String, error: Option<String>) -> Handler {
     render(LoginTemplate {
-        lang: LANG,
+        lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
         error,
         rd,
@@ -702,6 +718,15 @@ fn render<T: askama::Template>(t: T) -> Handler {
     Ok(Html(t.render()?).into_response())
 }
 
-fn tr(msgid: &str) -> String {
-    crate::i18n::tr(None, msgid)
+fn tr(lang: &str, msgid: &str) -> String {
+    crate::i18n::tr(lang, msgid)
+}
+
+/// Negotiate the request locale from Accept-Language against the compiled catalogs (else "en").
+fn lang_of(headers: &HeaderMap) -> String {
+    crate::i18n::best_locale(
+        headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    )
 }

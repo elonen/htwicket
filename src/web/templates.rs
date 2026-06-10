@@ -5,17 +5,33 @@
 use askama::Template;
 
 /// Template-facing translation hook. askama resolves `{{ tr("...") }}` as `self.tr(...)`, so it
-/// must be a method; a trait with a default impl lets every view share one English pass-through.
-/// Per-request locale threading lands with the i18n catalogs (then this reads each view's `lang`).
+/// must be a method; the trait threads each view's negotiated `lang` into the i18n lookup.
 trait Tr {
+    fn lang(&self) -> &str;
     fn tr(&self, msgid: &str) -> String {
-        crate::i18n::tr(None, msgid)
+        crate::i18n::tr(self.lang(), msgid)
     }
 }
-impl Tr for LoginTemplate {}
-impl Tr for LogoutTemplate {}
-impl Tr for AccountTemplate {}
-impl Tr for AdminTemplate {}
+impl Tr for LoginTemplate {
+    fn lang(&self) -> &str {
+        &self.lang
+    }
+}
+impl Tr for LogoutTemplate {
+    fn lang(&self) -> &str {
+        &self.lang
+    }
+}
+impl Tr for AccountTemplate {
+    fn lang(&self) -> &str {
+        &self.lang
+    }
+}
+impl Tr for AdminTemplate {
+    fn lang(&self) -> &str {
+        &self.lang
+    }
+}
 
 /// One schema field as shown in a form: a checkbox for bools, a text/email input otherwise,
 /// or read-only text when the viewer may not edit it.
@@ -32,7 +48,7 @@ pub struct FieldView {
 #[derive(Template)]
 #[template(path = "login.html")]
 pub struct LoginTemplate {
-    pub lang: &'static str,
+    pub lang: String,
     pub insecure_cookies: bool,
     pub error: Option<String>,
     pub rd: String,
@@ -41,14 +57,14 @@ pub struct LoginTemplate {
 #[derive(Template)]
 #[template(path = "logout.html")]
 pub struct LogoutTemplate {
-    pub lang: &'static str,
+    pub lang: String,
     pub insecure_cookies: bool,
 }
 
 #[derive(Template)]
 #[template(path = "account.html")]
 pub struct AccountTemplate {
-    pub lang: &'static str,
+    pub lang: String,
     pub insecure_cookies: bool,
     pub username: String,
     pub fields: Vec<FieldView>,
@@ -66,7 +82,7 @@ pub struct UserRow {
 #[derive(Template)]
 #[template(path = "admin.html")]
 pub struct AdminTemplate {
-    pub lang: &'static str,
+    pub lang: String,
     pub insecure_cookies: bool,
     pub users: Vec<UserRow>,
     /// Blank field views for the "add user" form.

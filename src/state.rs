@@ -31,7 +31,8 @@ pub struct UserDb {
 pub struct User {
     /// Raw hash field from .htpasswd (DES/$apr1$/$1$/$5$/$6$/$2y$). None = sidecar-only user (no password).
     pub hash: Option<String>,
-    /// pwd_fp = first 16 hex of SHA-256(hash field); rotates on every password write (bcrypt re-salts).
+    /// pwd_fp = password fingerprint: first 16 hex of SHA-256(hash field); rotates on every password write (bcrypt re-salts).
+    /// Used to detect password changes without putting the full hash in token.
     pub pwd_fp: Option<String>,
     /// Schema-declared fields with config defaults pre-applied (CEL exprs are total over these).
     pub fields: BTreeMap<String, toml::Value>,

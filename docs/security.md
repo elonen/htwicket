@@ -28,7 +28,23 @@ In-memory, per-process (`src/authn.rs`):
   on a successful login.
 - **Per-IP**: coarse cap of 30 attempts/min. Client IP = **last** `X-Forwarded-For` entry (the
   direct peer is always nginx — so nginx **must** set XFF; see [deployment.md](deployment.md)).
-- Login success/failure/lockout is logged at `INFO` with username + IP (audit trail).
+- Success/failure/lockout is logged at `INFO` with username + IP (audit trail).
+
+Both password-verification surfaces are limited: the **login form** and the **Basic passthrough**
+branch of `/auth` (`basic_auth_passthrough`). They **share** the same per-username and per-IP state,
+with two deliberate consequences:
+
+- On `/auth`, only a cache **miss** consults the limiter — a request served from the Basic-verify
+  cache (below) spends no budget. Without this an authenticated scripted client, which hits `/auth`
+  on *every* proxied request, would trip the per-IP cap within seconds. So only genuine bcrypt
+  verifications count, and only failed ones lock the account.
+- Because the state is shared, a stale script repeatedly sending a **wrong** Basic password (e.g. a
+  cron job left running after a password change) locks the user out of the **web login form** too —
+  the same per-username backoff applies to both. This is intended (it is one account, one backoff),
+  but worth knowing when diagnosing a sudden lockout.
+
+One asymmetry from the cache: a Basic password that verified *before* a lockout stays accepted from
+the cache until its 5-min TTL expires or the file is reloaded, even while the form is locked.
 
 ## Passwords at rest
 

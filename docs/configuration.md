@@ -13,8 +13,8 @@ behind it.
   `HTWICKET_SUPERADMINS__EXPR`, `HTWICKET_SESSION_IDLE_HOURS`.
 
 Everything is validated at startup — an unknown key, a bad `base_path`, a malformed CEL expression,
-or a default that doesn't match its field type is a **loud startup failure**, never a request-time
-surprise. (CEL is compiled by `serve` only, so the offline `user` CLI keeps working even with a
+or a default that doesn't match its field type is a **loud startup failure**.
+(CEL is compiled by `serve` only, so the offline `user` CLI keeps working even with a
 broken header/claim expr — the lockout-recovery path.)
 
 ## Core keys
@@ -23,7 +23,7 @@ Defaults in parentheses. See the example for inline guidance.
 
 | key | meaning |
 |---|---|
-| `listen` (`127.0.0.1:8088`) | bind address |
+| `listen` (`127.0.0.1:52155`) | bind address |
 | `base_path` (`/htwicket`) | all routes served under this; nginx `proxy_pass` needs no rewrite |
 | `htpasswd_file` *(required)* | the password file |
 | `sidecar_file` | fields file (default: `.htwicket.toml` next to `htpasswd_file`) |
@@ -48,8 +48,8 @@ identifier (`[A-Za-z_][A-Za-z0-9_]*`).
 | `type` | `bool` \| `string` \| `email` |
 | `default` | value when the user has none (must match `type`) |
 | `required` | non-bool only; flags a missing value in `user check` / admin UI |
-| `user_visible` (`false`) | show it (read-only) on the user's own `/account` |
-| `user_editable_expr` (`"false"`) | CEL bool: may *this* user edit it? Editable ⇒ visible |
+| `user_visible` (`false`) | show it (RO) on the user's own `/account` (implicit if `editable`) |
+| `user_editable_expr` (`"false"`) | CEL bool: may *this* user edit it? |
 
 **`[headers.<name>]`** and **`[jwt-claims.<name>]`** — `{ type, expr }`. Each `expr` is CEL.
 Headers are emitted on every `/auth` 200 (live); claims are baked once at login (stale until
@@ -77,7 +77,7 @@ expr = "fields.display_name != '' ? fields.display_name : username"
 ## State files
 
 Three plain files live beside each other (all under nginx/Apache's stock `location ~ /\.ht` deny
-glob, so they're never web-served). Managed by `src/state.rs`.
+glob, to avoid being web-served). Managed by `src/state.rs`.
 
 - **`.htpasswd`** — canonical passwords, one `user:hash` line each. Existing files work unmodified.
   Verifies DES crypt, `$apr1$`, `{SHA}`, `$1$`, `$5$`/`$6$`, and bcrypt (`$2a/2b/2y`); **writes
@@ -95,6 +95,5 @@ password — can't log in until given one).
 - **Reads**: in-memory; reloaded when either file's mtime changes (one `stat()` per request, on the
   read-lock fast path). CLI edits / admin saves apply within one request.
 - **Writes**: take the `flock`, write a temp file in the same dir, `fsync`, atomic `rename`.
-  Existing permissions are preserved; new files are `0600` (they hold password hashes). The same
-  path is used by the server and the offline CLI, so they never corrupt each other.
+  Existing permissions are preserved; new files are `0600` (they hold password hashes).
 </details>

@@ -43,8 +43,9 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 - **Unit** — hash-verify matrix (every legacy format + garbage), CEL eval/type-checks, config
   layering + validation, sidecar schema, `rd` validation, session mint/verify/re-mint/cap.
 - **Integration** (`tests/integration.rs`) — spawns the real binary against tempdir files and drives
-  it over HTTP: login → `/auth` headers, Basic passthrough, lockout, admin CRUD + batch rename,
-  account visibility/editability, password-change session invalidation, `user check` exit codes.
+  it over HTTP: login → `/auth` headers, Basic passthrough, lockout (form + Basic), sliding re-mint
+  `Set-Cookie`, Basic verify-cache cleared on reload, admin CRUD + batch rename, account
+  visibility/editability, password-change session invalidation, `user check` exit codes.
 
 Full nginx end-to-end is left to downstream deployments.
 

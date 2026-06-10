@@ -57,5 +57,5 @@ jobs:
         with:
           files: dist_deb/*.deb
 
-# TODO: musl/distroless runtime image + docker push (needs a runtime Dockerfile;
-# the Dockerfile.deb here is only the package builder).
+# TODO: runtime Docker image (distroless/debian-slim) + docker push (needs a
+# runtime Dockerfile; the Dockerfile.deb here is only the package builder).

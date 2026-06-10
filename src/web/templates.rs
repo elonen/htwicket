@@ -82,6 +82,8 @@ pub struct AccountTemplate {
     pub fields: Vec<FieldView>,
     pub error: Option<String>,
     pub notice: Option<String>,
+    /// cfg.min_password_len, for the client-side `minlength` hint (server still enforces).
+    pub min_password_len: usize,
 }
 
 /// One row of the admin user table: username + every schema field as an editable `FieldView`.
@@ -99,4 +101,6 @@ pub struct AdminTemplate {
     pub users: Vec<UserRow>,
     pub error: Option<String>,
     pub notice: Option<String>,
+    /// cfg.min_password_len, for the client-side `minlength` hint (server still enforces).
+    pub min_password_len: usize,
 }

@@ -2,21 +2,21 @@
 
 ## nginx wiring
 
-htwicket sits behind nginx, which terminates TLS and is htwicket's only direct peer. Serve htwicket
+Htwicket sits behind nginx, which terminates TLS and is htwicket's only direct peer. Serve htwicket
 under the same `base_path` it's configured with, so `proxy_pass` needs no URL rewriting. The auth
 flow itself is explained in [auth-flow.md](auth-flow.md).
 
 ```nginx
 # htwicket's own pages (login, account, admin, …)
 location /htwicket/ {
-    proxy_pass http://127.0.0.1:8088;
+    proxy_pass http://127.0.0.1:52155;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 
 # the internal auth_request target
 location = /htwicket/auth {
     internal;
-    proxy_pass http://127.0.0.1:8088/htwicket/auth;
+    proxy_pass http://127.0.0.1:52155/htwicket/auth;
     proxy_pass_request_body off;
     proxy_set_header Content-Length "";
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -1,6 +1,6 @@
 # htwicket - migrate from old .htaccess to something a slightly more modern
 
-Small auth gateway + user manager for nginx `auth_request`.
+Small auth gateway + user manager for nginx `auth_request` (or similar for other reverse proxies).
 Provides a web GUI for editing `.htpasswd`, upgrading its hashes to bcrypt,
 and providing custom user data backend apps.
 

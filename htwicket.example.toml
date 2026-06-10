@@ -1,7 +1,7 @@
 # htwicket example config. Copy to /etc/htwicket.toml.
 # Every key can be overridden by env: HTWICKET_LISTEN, HTWICKET_SUPERADMINS__EXPR, ...
 
-listen = "127.0.0.1:8088"
+listen = "127.0.0.1:52155"
 base_path = "/htwicket"
 htpasswd_file = "/var/www/.htpasswd"
 # sidecar_file = "/var/www/.htwicket.toml"   # default: next to htpasswd_file

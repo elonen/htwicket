@@ -38,7 +38,7 @@
         <input id="old_password" type="password" name="old_password" autocomplete="current-password">
       </label>
       <label for="new_password">{{ tr("New password") }}
-        <input id="new_password" type="password" name="new_password" autocomplete="new-password" minlength="8">
+        <input id="new_password" type="password" name="new_password" autocomplete="new-password" minlength="{{ min_password_len }}">
         <small>{{ tr("Leave blank to keep your current password. Changing it signs you out of all sessions.") }}</small>
       </label>
     </fieldset>

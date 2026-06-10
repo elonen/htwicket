@@ -25,12 +25,12 @@ use templates::{
     AccountTemplate, AdminTemplate, FieldView, LoginTemplate, LogoutTemplate, UserRow,
 };
 
-/// CEL programs + parsed header names, compiled once at startup (bad expr / header name = fail).
-struct Compiled {
+/// CEL (Common Expression Language) programs + parsed header names, compiled once at startup (bad expr / header name = fail).
+struct CompiledExpressions {
     headers: Vec<(HeaderName, CompiledExpr)>,
     jwt_claims: Vec<(String, CompiledExpr)>,
     superadmin: CompiledExpr,
-    /// Per-field `user_editable_expr` (bool over {username, fields.*}) — may a given user edit it.
+    /// Per-field `user_editable_expr` (bool over {username, fields.*}) tells if given user may edit it.
     field_editable: BTreeMap<String, CompiledExpr>,
 }
 
@@ -39,7 +39,7 @@ struct AppState {
     cfg: Arc<Config>,
     db: Arc<RwLock<UserDb>>,
     secret: Arc<Vec<u8>>,
-    compiled: Arc<Compiled>,
+    compiled: Arc<CompiledExpressions>,
     limiter: Arc<crate::authn::RateLimiter>,
     cache: Arc<crate::authn::VerifyCache>,
 }
@@ -72,7 +72,7 @@ pub fn serve(cfg: Config) -> anyhow::Result<()> {
     })
 }
 
-fn compile_all(cfg: &Config) -> anyhow::Result<Compiled> {
+fn compile_all(cfg: &Config) -> anyhow::Result<CompiledExpressions> {
     let superadmin =
         cel::compile(&cfg.superadmins.expr, FieldType::Bool).context("superadmins.expr")?;
     let mut headers = Vec::new();
@@ -94,7 +94,7 @@ fn compile_all(cfg: &Config) -> anyhow::Result<Compiled> {
             .with_context(|| format!("fields.{name}.user_editable_expr"))?;
         field_editable.insert(name.clone(), expr);
     }
-    Ok(Compiled {
+    Ok(CompiledExpressions {
         headers,
         jwt_claims,
         superadmin,
@@ -320,6 +320,7 @@ async fn account_page(State(state): State<AppState>, headers: HeaderMap) -> Hand
         fields: account_field_views(&state, user, &claims.sub),
         error: None,
         notice: None,
+        min_password_len: state.cfg.min_password_len,
     })
 }
 
@@ -407,6 +408,7 @@ async fn account_submit(
         fields,
         error,
         notice,
+        min_password_len: state.cfg.min_password_len,
     })
 }
 
@@ -619,6 +621,7 @@ async fn render_admin(
         users,
         error,
         notice,
+        min_password_len: state.cfg.min_password_len,
     })
 }
 

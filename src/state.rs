@@ -185,6 +185,34 @@ impl UserDb {
         Ok(())
     }
 
+    /// Rename a user in both files (and memory) under one lock, preserving password + all fields.
+    /// Caller must have validated `new` (valid + not colliding); a no-op if `old` doesn't exist.
+    pub fn rename_user(&mut self, old: &str, new: &str) -> anyhow::Result<()> {
+        if old == new {
+            return Ok(());
+        }
+        let mut lock = self.open_lock()?;
+        let _guard = lock.write()?;
+
+        let mut entries = parse_htpasswd(&read_opt(&self.htpasswd_path)?.unwrap_or_default());
+        if let Some(hash) = entries.remove(old) {
+            entries.insert(new.to_string(), hash);
+            atomic_write(&self.htpasswd_path, &serialize_htpasswd(&entries))?;
+            self.htpasswd_mtime = mtime(&self.htpasswd_path);
+        }
+        let mut sidecar = read_sidecar(&self.sidecar_path)?;
+        if let Some(table) = sidecar.users.remove(old) {
+            sidecar.users.insert(new.to_string(), table);
+            atomic_write(&self.sidecar_path, &toml::to_string_pretty(&sidecar)?)?;
+            self.sidecar_mtime = mtime(&self.sidecar_path);
+        }
+        self.sidecar = sidecar;
+        if let Some(user) = self.users.remove(old) {
+            self.users.insert(new.to_string(), user);
+        }
+        Ok(())
+    }
+
     /// Open (creating if needed) the shared lock file. Caller takes `.write()` for the duration
     /// of a read-modify-write; the lock is advisory and released when the guard drops. Opened
     /// lazily per write so read-only use (e.g. `user list`) never needs write access to the dir.
@@ -466,5 +494,36 @@ mod tests {
         db.delete_user("dave").unwrap();
         assert!(!db.users.contains_key("dave"));
         assert_eq!(fs::read_to_string(&htpasswd).unwrap(), "");
+    }
+
+    #[test]
+    fn rename_moves_password_and_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let htpasswd = dir.path().join(".htpasswd");
+        let sidecar = dir.path().join(".htwicket.toml");
+        fs::write(
+            &htpasswd,
+            "old:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n",
+        )
+        .unwrap();
+        fs::write(
+            &sidecar,
+            "[users.old]\ndisplay_name = \"Renamed\"\nquota_mb = 7\n",
+        )
+        .unwrap();
+
+        let mut db = UserDb::load(cfg_with_fields(htpasswd.clone())).unwrap();
+        let fp = db.users["old"].pwd_fp.clone();
+        db.rename_user("old", "new").unwrap();
+
+        assert!(!db.users.contains_key("old"));
+        assert_eq!(db.users["new"].pwd_fp, fp); // password preserved (same hash → same fp)
+        assert_eq!(
+            db.users["new"].fields["display_name"],
+            toml::Value::String("Renamed".into())
+        );
+        assert!(fs::read_to_string(&htpasswd).unwrap().starts_with("new:$2"));
+        // Unknown sidecar field survives the move.
+        assert!(fs::read_to_string(&sidecar).unwrap().contains("quota_mb"));
     }
 }

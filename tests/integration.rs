@@ -261,27 +261,98 @@ fn admin_gate_and_add_user() {
         200
     );
 
+    // Add a user (password only — fields take their config defaults).
     let r = ca
         .post(format!("{}/admin", srv.base))
         .form(&[
             ("action", "add"),
             ("username", "carol"),
             ("new_password", "carolpassword"),
-            ("f_is_admin", "on"),
         ])
         .send()
         .unwrap();
     assert_eq!(r.status(), 200);
     assert!(r.text().unwrap().contains("carol"));
 
-    // The new user can now authenticate via Basic and is flagged admin by the CEL header.
+    // The new user can now authenticate via Basic; is_admin defaults to false (not set at add).
     let r = reqwest::blocking::Client::new()
         .get(format!("{}/auth", srv.base))
         .basic_auth("carol", Some("carolpassword"))
         .send()
         .unwrap();
     assert_eq!(r.status(), 200);
-    assert_eq!(r.headers().get("x-remote-user-is-admin").unwrap(), "true");
+    assert_eq!(r.headers().get("x-remote-user-is-admin").unwrap(), "false");
+}
+
+#[test]
+fn admin_batch_save_renames_and_edits() {
+    let srv = spawn("");
+    let ca = client();
+    ca.post(format!("{}/login", srv.base))
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+
+    // One batch save (whole table): rename bob -> bob2, grant is_admin, set a display name.
+    // admin's row is sent too (browser submits every row); keep its can_upload on.
+    let r = ca
+        .post(format!("{}/admin", srv.base))
+        .form(&[
+            ("action", "save"),
+            ("username[admin]", "admin"),
+            ("f_can_upload[admin]", "on"),
+            ("username[bob]", "bob2"),
+            ("f_display_name[bob]", "Bob Renamed"),
+            ("f_is_admin[bob]", "on"),
+            ("f_can_upload[bob]", "on"),
+        ])
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 200);
+
+    let basic = reqwest::blocking::Client::new();
+    // Old name is gone...
+    let old = basic
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(old.status(), 401);
+    // ...renamed user keeps the original password and carries the edited fields.
+    let new = basic
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob2", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(new.status(), 200);
+    assert_eq!(
+        new.headers().get("x-remote-user-name").unwrap(),
+        "Bob Renamed"
+    );
+    assert_eq!(new.headers().get("x-remote-user-is-admin").unwrap(), "true");
+}
+
+#[test]
+fn admin_save_rejects_duplicate_username() {
+    let srv = spawn("");
+    let ca = client();
+    ca.post(format!("{}/login", srv.base))
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    // Renaming bob onto the existing "admin" must be refused, and bob must survive.
+    let r = ca
+        .post(format!("{}/admin", srv.base))
+        .form(&[("action", "save"), ("username[bob]", "admin")])
+        .send()
+        .unwrap();
+    assert!(r.text().unwrap().contains("already exists"));
+    let still = reqwest::blocking::Client::new()
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(still.status(), 200);
 }
 
 #[test]

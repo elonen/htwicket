@@ -4,7 +4,7 @@
 
 mod templates;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{Context as _, anyhow};
@@ -424,7 +424,8 @@ async fn admin_page(State(state): State<AppState>, headers: HeaderMap) -> Handle
     render_admin(&state, &lang_of(&headers), None, None).await
 }
 
-/// Superadmins only: add/delete user, set password, edit all fields.
+/// Superadmins only. Actions: `save` (batch edit/rename + set passwords across all rows),
+/// `delete:<user>` (per-row button), `add` (the separate add-user form).
 async fn admin_submit(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -446,83 +447,152 @@ async fn admin_submit(
 
     let lang = lang_of(&headers);
     let action = form.get("action").map(String::as_str).unwrap_or("");
-    let username = form.get("username").cloned().unwrap_or_default();
-    let new_password = form.get("new_password").filter(|s| !s.is_empty());
-
-    let outcome = apply_admin_action(&state, &lang, action, &username, new_password, &form).await;
+    let outcome = if action == "save" {
+        save_all(&state, &lang, &form).await
+    } else if let Some(name) = action.strip_prefix("delete:") {
+        delete_one(&state, &lang, name).await
+    } else if action == "add" {
+        add_one(&state, &lang, &form).await
+    } else {
+        Err(tr(&lang, "Unknown action."))
+    };
     match outcome {
         Ok(notice) => render_admin(&state, &lang, None, Some(notice)).await,
         Err(msg) => render_admin(&state, &lang, Some(msg), None).await,
     }
 }
 
-/// Returns Ok(notice) / Err(user-facing message). Real (unexpected) IO errors bubble as AppError
-/// only from render_admin; expected validation failures are Err(String) shown in the page.
-async fn apply_admin_action(
+struct SaveRow {
+    old: String,
+    new: String,
+    password: Option<String>,
+    fields: BTreeMap<String, toml::Value>,
+}
+
+/// Batch-apply the whole user table: per-user `username[old]` (rename), `password[old]` (blank =
+/// keep), and `f_<field>[old]`. The batch is validated as a whole first (valid + unique usernames,
+/// password length) so one bad row rejects the save rather than applying partially.
+async fn save_all(
     state: &AppState,
     lang: &str,
-    action: &str,
-    username: &str,
-    new_password: Option<&String>,
     form: &HashMap<String, String>,
 ) -> Result<String, String> {
-    match action {
-        "delete" => {
-            state
-                .db
-                .write()
-                .await
-                .delete_user(username)
-                .map_err(|e| e.to_string())?;
-            Ok(tr(lang, "User deleted."))
+    let names: Vec<String> = { state.db.read().await.users.keys().cloned().collect() };
+    let current: HashSet<String> = names.iter().cloned().collect();
+
+    let mut plan = Vec::new();
+    let mut final_names = HashSet::new();
+    for old in &names {
+        let new = form
+            .get(&format!("username[{old}]"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| old.clone());
+        if !UserDb::valid_username(&new) {
+            return Err(tr(lang, "Invalid username."));
         }
-        "add" | "save" => {
-            if !UserDb::valid_username(username) {
-                return Err(tr(lang, "Invalid username."));
-            }
-            if action == "add" {
-                let exists = state
-                    .db
-                    .read()
-                    .await
-                    .users
-                    .get(username)
-                    .is_some_and(|u| u.hash.is_some());
-                if exists {
-                    return Err(tr(lang, "User already exists."));
-                }
-            }
-            if let Some(pw) = new_password {
-                if pw.len() < state.cfg.min_password_len {
-                    return Err(tr(lang, "Password is too short."));
-                }
-                let hash = crate::authn::hash_password(pw).map_err(|e| e.to_string())?;
-                state
-                    .db
-                    .write()
-                    .await
-                    .write_password(username, &hash)
-                    .map_err(|e| e.to_string())?;
-            } else if action == "add" {
-                return Err(tr(lang, "A password is required to add a user."));
-            }
-            let updates = collect_fields(&state.cfg, form, |_| true);
-            if !updates.is_empty() {
-                state
-                    .db
-                    .write()
-                    .await
-                    .write_fields(username, &updates)
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(if action == "add" {
-                tr(lang, "User added.")
-            } else {
-                tr(lang, "Saved.")
-            })
+        // Reject renaming onto any other current name (avoids swaps/chains) or a batch duplicate.
+        if (&new != old && current.contains(&new)) || !final_names.insert(new.clone()) {
+            return Err(tr(lang, "Username already exists."));
         }
-        _ => Err(tr(lang, "Unknown action.")),
+        let password = form
+            .get(&format!("password[{old}]"))
+            .filter(|s| !s.is_empty())
+            .cloned();
+        if let Some(p) = &password
+            && p.len() < state.cfg.min_password_len
+        {
+            return Err(tr(lang, "Password is too short."));
+        }
+        let fields = collect_row_fields(&state.cfg, form, old);
+        plan.push(SaveRow {
+            old: old.clone(),
+            new,
+            password,
+            fields,
+        });
     }
+
+    let mut db = state.db.write().await;
+    for row in plan {
+        // Apply to the current (old) name, then rename — so the rename carries the fresh data.
+        db.write_fields(&row.old, &row.fields)
+            .map_err(|e| e.to_string())?;
+        if let Some(p) = row.password {
+            let hash = crate::authn::hash_password(&p).map_err(|e| e.to_string())?;
+            db.write_password(&row.old, &hash)
+                .map_err(|e| e.to_string())?;
+        }
+        if row.new != row.old {
+            db.rename_user(&row.old, &row.new)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(tr(lang, "Saved."))
+}
+
+async fn delete_one(state: &AppState, lang: &str, user: &str) -> Result<String, String> {
+    state
+        .db
+        .write()
+        .await
+        .delete_user(user)
+        .map_err(|e| e.to_string())?;
+    Ok(tr(lang, "User deleted."))
+}
+
+/// The separate add-user form: `username` + `new_password`. Fields are left to their config
+/// defaults (no sidecar entry written); the admin sets them afterward via the row editor + Save.
+async fn add_one(
+    state: &AppState,
+    lang: &str,
+    form: &HashMap<String, String>,
+) -> Result<String, String> {
+    let username = form.get("username").map(String::as_str).unwrap_or("");
+    if !UserDb::valid_username(username) {
+        return Err(tr(lang, "Invalid username."));
+    }
+    if state
+        .db
+        .read()
+        .await
+        .users
+        .get(username)
+        .is_some_and(|u| u.hash.is_some())
+    {
+        return Err(tr(lang, "User already exists."));
+    }
+    let Some(pw) = form.get("new_password").filter(|s| !s.is_empty()) else {
+        return Err(tr(lang, "A password is required to add a user."));
+    };
+    if pw.len() < state.cfg.min_password_len {
+        return Err(tr(lang, "Password is too short."));
+    }
+    let hash = crate::authn::hash_password(pw).map_err(|e| e.to_string())?;
+    state
+        .db
+        .write()
+        .await
+        .write_password(username, &hash)
+        .map_err(|e| e.to_string())?;
+    Ok(tr(lang, "User added."))
+}
+
+/// Read `f_<field>[<old>]` values for every schema field (admin edits all). Bools: present = true.
+fn collect_row_fields(
+    cfg: &Config,
+    form: &HashMap<String, String>,
+    old: &str,
+) -> BTreeMap<String, toml::Value> {
+    let mut out = BTreeMap::new();
+    for (name, spec) in &cfg.fields {
+        let key = format!("f_{name}[{old}]");
+        let value = match spec.type_ {
+            FieldType::Bool => toml::Value::Boolean(form.contains_key(&key)),
+            _ => toml::Value::String(form.get(&key).cloned().unwrap_or_default()),
+        };
+        out.insert(name.clone(), value);
+    }
+    out
 }
 
 // ---- View building ----
@@ -547,7 +617,6 @@ async fn render_admin(
         lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
         users,
-        add_fields: admin_field_views(&state.cfg, &BTreeMap::new()),
         error,
         notice,
     })

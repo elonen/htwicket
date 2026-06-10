@@ -5,7 +5,7 @@
 <div class="toolbar">
   <div>
     <h1>{{ tr("User management") }}</h1>
-    <p class="lede" style="margin:0">{{ tr("Set a password, edit profile fields, or delete a user.") }}</p>
+    <p class="lede" style="margin:0">{{ tr("Rename, set a password, or edit profile fields, then save.") }}</p>
   </div>
   <span class="count">{{ users.len() }} {{ tr("users") }}</span>
 </div>
@@ -26,45 +26,48 @@
   <p>{{ tr("Add the first account below.") }}</p>
 </div>
 {% else %}
-<div class="user-list">
-  {# Each user is its own form: edit fields + set password (Save), or Delete. #}
-  {% for u in users %}
-  <form class="user-row" method="post">
-    <input type="hidden" name="username" value="{{ u.name }}">
-    <div class="ur-head">
-      <label>{{ tr("Username") }}{% if !u.has_password %} <span class="tag">{{ tr("no password") }}</span>{% endif %}
-        <input class="mono-input" value="{{ u.name }}" disabled>
-      </label>
-      <label>{{ tr("Set new password") }}
-        <input type="password" name="new_password" placeholder="{{ tr("Leave blank to keep") }}" autocomplete="new-password" minlength="8">
-      </label>
-      <button type="submit" class="btn-danger ur-del" name="action" value="delete">{{ tr("Delete") }}</button>
-    </div>
-
-    {% if !u.fields.is_empty() %}
-    <details class="ur-fields">
-      <summary>
-        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
-        {{ tr("Profile fields") }} <span class="count">{{ u.fields.len() }}</span>
-      </summary>
-      <div class="ur-fieldgrid">
-        {% for f in u.fields %}
-          {% if f.is_bool %}
-        <label class="check"><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
-          {% else %}
-        <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
-          {% endif %}
-        {% endfor %}
+{# One form for the whole list: edit/rename inline (collapsed rows still submit), then Save. #}
+<form method="post">
+  <div class="user-list">
+    {% for u in users %}
+    <div class="user-row">
+      <div class="ur-head">
+        <label>{{ tr("Username") }}{% if !u.has_password %} <span class="tag">{{ tr("no password") }}</span>{% endif %}
+          <input class="mono-input" name="username[{{ u.name }}]" value="{{ u.name }}" autocapitalize="none"
+                 spellcheck="false" pattern="[A-Za-z0-9@._\-]{1,64}" required aria-label="{{ tr("Username") }}">
+        </label>
+        <label>{{ tr("Set new password") }}
+          <input type="password" name="password[{{ u.name }}]" placeholder="{{ tr("Leave blank to keep") }}"
+                 autocomplete="new-password" minlength="8" aria-label="{{ tr("Set new password") }}">
+        </label>
+        <button type="submit" class="btn-danger ur-del" name="action" value="delete:{{ u.name }}" formnovalidate>{{ tr("Delete") }}</button>
       </div>
-    </details>
-    {% endif %}
 
-    <div class="actions" style="margin-top:.9rem">
-      <button type="submit" name="action" value="save">{{ tr("Save") }}</button>
+      {% if !u.fields.is_empty() %}
+      <details class="ur-fields">
+        <summary>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+          {{ tr("Profile fields") }} <span class="count">{{ u.fields.len() }}</span>
+        </summary>
+        <div class="ur-fieldgrid">
+          {% for f in u.fields %}
+            {% if f.is_bool %}
+          <label class="check"><input type="checkbox" name="f_{{ f.name }}[{{ u.name }}]"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
+            {% else %}
+          <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}[{{ u.name }}]" value="{{ f.value }}"></label>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
     </div>
-  </form>
-  {% endfor %}
-</div>
+    {% endfor %}
+  </div>
+
+  <div class="actions" style="margin-top:1.3rem">
+    <button type="submit" name="action" value="save">{{ tr("Save changes") }}</button>
+  </div>
+</form>
 {% endif %}
 
 <hr>
@@ -81,13 +84,7 @@
         <input id="add_password" type="password" name="new_password" autocomplete="new-password" minlength="8" required>
       </label>
     </div>
-    {% for f in add_fields %}
-      {% if f.is_bool %}
-    <label class="check"><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
-      {% else %}
-    <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
-      {% endif %}
-    {% endfor %}
+    <p class="small muted" style="margin:.2rem 0 1rem">{{ tr("Profile fields use their defaults; edit them above after adding.") }}</p>
     <button type="submit" name="action" value="add">{{ tr("Add user") }}</button>
   </fieldset>
 </form>

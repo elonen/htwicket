@@ -97,8 +97,6 @@ pub struct AdminTemplate {
     pub lang: String,
     pub insecure_cookies: bool,
     pub users: Vec<UserRow>,
-    /// Blank field views for the "add user" form.
-    pub add_fields: Vec<FieldView>,
     pub error: Option<String>,
     pub notice: Option<String>,
 }

@@ -8,11 +8,3 @@
 pub fn tr(_locale: Option<&str>, msgid: &str) -> String {
     msgid.to_string()
 }
-
-pub fn tr_fmt(locale: Option<&str>, msgid: &str, params: &[(&str, &str)]) -> String {
-    let mut out = tr(locale, msgid);
-    for (name, value) in params {
-        out = out.replace(&format!("{{{name}}}"), value);
-    }
-    out
-}

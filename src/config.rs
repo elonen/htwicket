@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use figment::providers::{Env, Format, Toml};
 use figment::Figment;
+use figment::providers::{Env, Format, Toml};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -107,9 +107,7 @@ fn validate(cfg: &Config) -> anyhow::Result<()> {
     for (name, spec) in &cfg.fields {
         // Field names are referenced as `fields.<name>` in CEL, so they must be CEL identifiers.
         if !is_ident(name) {
-            anyhow::bail!(
-                "field name `{name}` must be a CEL identifier ([A-Za-z_][A-Za-z0-9_]*)"
-            );
+            anyhow::bail!("field name `{name}` must be a CEL identifier ([A-Za-z_][A-Za-z0-9_]*)");
         }
         if spec.type_ == FieldType::Bool && spec.required {
             anyhow::bail!("field `{name}`: `required` applies only to non-bool fields");
@@ -120,7 +118,10 @@ fn validate(cfg: &Config) -> anyhow::Result<()> {
                 FieldType::String | FieldType::Email => default.is_str(),
             };
             if !ok {
-                anyhow::bail!("field `{name}`: default does not match type {:?}", spec.type_);
+                anyhow::bail!(
+                    "field `{name}`: default does not match type {:?}",
+                    spec.type_
+                );
             }
         }
     }
@@ -178,14 +179,28 @@ mod tests {
 
     #[test]
     fn base_path_must_be_absolute() {
-        let cfg = parse(&format!("base_path = \"htwicket\"\n{REQUIRED}{SUPERADMINS}"));
+        let cfg = parse(&format!(
+            "base_path = \"htwicket\"\n{REQUIRED}{SUPERADMINS}"
+        ));
         assert!(validate(&cfg).is_err());
     }
 }
 
-fn d_listen() -> String { "127.0.0.1:8088".into() }
-fn d_base_path() -> String { "/htwicket".into() }
-fn d_state_dir() -> PathBuf { "/var/lib/htwicket".into() }
-fn d_min_password_len() -> usize { 8 }
-fn d_session_hours() -> u32 { 12 }
-fn d_session_max_days() -> u32 { 7 }
+fn d_listen() -> String {
+    "127.0.0.1:8088".into()
+}
+fn d_base_path() -> String {
+    "/htwicket".into()
+}
+fn d_state_dir() -> PathBuf {
+    "/var/lib/htwicket".into()
+}
+fn d_min_password_len() -> usize {
+    8
+}
+fn d_session_hours() -> u32 {
+    12
+}
+fn d_session_max_days() -> u32 {
+    7
+}

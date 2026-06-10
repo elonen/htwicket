@@ -27,15 +27,21 @@ pub fn compile(expr: &str, type_: FieldType) -> anyhow::Result<CompiledExpr> {
         Ok(Err(e)) => bail!("invalid CEL expression `{expr}`: {e}"),
         Err(_) => bail!("invalid CEL expression `{expr}` (parser rejected it)"),
     };
-    Ok(CompiledExpr { program, type_, source: expr.to_string() })
+    Ok(CompiledExpr {
+        program,
+        type_,
+        source: expr.to_string(),
+    })
 }
 
 /// Evaluate over {username, fields.*} and coerce the result to the declared type.
 /// Errors (eval failure or type mismatch) are returned for the caller to log + fail closed.
 pub fn eval(expr: &CompiledExpr, user: &User, username: &str) -> anyhow::Result<toml::Value> {
     let mut ctx = Context::default();
-    ctx.add_variable("username", username).map_err(|e| anyhow!("cel context: {e}"))?;
-    ctx.add_variable("fields", &user.fields).map_err(|e| anyhow!("cel context: {e}"))?;
+    ctx.add_variable("username", username)
+        .map_err(|e| anyhow!("cel context: {e}"))?;
+    ctx.add_variable("fields", &user.fields)
+        .map_err(|e| anyhow!("cel context: {e}"))?;
     let value = expr
         .program
         .execute(&ctx)
@@ -63,7 +69,10 @@ mod tests {
         User {
             hash: None,
             pwd_fp: None,
-            fields: fields.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+            fields: fields
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
         }
     }
 
@@ -86,9 +95,15 @@ mod tests {
         )
         .unwrap();
         let named = user(&[("display_name", toml::Value::String("Alice".into()))]);
-        assert_eq!(eval(&e, &named, "alice").unwrap(), toml::Value::String("Alice".into()));
+        assert_eq!(
+            eval(&e, &named, "alice").unwrap(),
+            toml::Value::String("Alice".into())
+        );
         let blank = user(&[("display_name", toml::Value::String(String::new()))]);
-        assert_eq!(eval(&e, &blank, "bob").unwrap(), toml::Value::String("bob".into()));
+        assert_eq!(
+            eval(&e, &blank, "bob").unwrap(),
+            toml::Value::String("bob".into())
+        );
     }
 
     #[test]

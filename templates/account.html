@@ -2,10 +2,20 @@
 {% block title %}{{ tr("My account") }}{% endblock %}
 {% block content %}
 <h1>{{ tr("My account") }} — {{ username }}</h1>
-{# user_editable fields rendered by type: bool=checkbox, email=type=email, string=text;
-   non-editable fields shown read-only #}
+{% if let Some(error) = error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if let Some(notice) = notice %}<p role="status">{{ notice }}</p>{% endif %}
 <form method="post">
-  {% block fields %}{% endblock %}
+  {% for f in fields %}
+    {% if f.editable %}
+      {% if f.is_bool %}
+  <label><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
+      {% else %}
+  <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
+      {% endif %}
+    {% else %}
+  <p>{{ f.label }}: {{ f.value }}</p>
+    {% endif %}
+  {% endfor %}
   <fieldset>
     <legend>{{ tr("Change password") }}</legend>
     <label>{{ tr("Current password") }} <input type="password" name="old_password" autocomplete="current-password"></label>

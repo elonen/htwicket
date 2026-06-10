@@ -69,6 +69,13 @@ impl UserDb {
         Ok(db)
     }
 
+    /// Cheap immutable mtime probe — lets the hot path take only a read lock in the common
+    /// (unchanged) case and escalate to a write lock for reload_if_changed() only when needed.
+    pub fn changed_on_disk(&self) -> bool {
+        mtime(&self.htpasswd_path) != self.htpasswd_mtime
+            || mtime(&self.sidecar_path) != self.sidecar_mtime
+    }
+
     /// Re-read both files if either's mtime changed since last load. Returns true on reload;
     /// the caller clears the authn verify-cache when it does.
     pub fn reload_if_changed(&mut self) -> anyhow::Result<bool> {
@@ -148,11 +155,14 @@ impl UserDb {
 
         let effective = effective_fields(&self.cfg, &sidecar.users[user]).0;
         self.sidecar = sidecar;
-        self.users.entry(user.to_string()).or_insert_with(|| User {
-            hash: None,
-            pwd_fp: None,
-            fields: BTreeMap::new(),
-        }).fields = effective;
+        self.users
+            .entry(user.to_string())
+            .or_insert_with(|| User {
+                hash: None,
+                pwd_fp: None,
+                fields: BTreeMap::new(),
+            })
+            .fields = effective;
         Ok(())
     }
 
@@ -215,8 +225,10 @@ fn build_users(cfg: &Config, htpasswd_text: &str, sidecar: &Sidecar) -> BTreeMap
         .collect()
 }
 
-/// Resolve schema fields against a raw sidecar table: validated value or config default.
-/// Returns the effective field map plus any schema problems (type mismatch, missing required).
+/// Resolve schema fields against a raw sidecar table. Every field always gets a value
+/// (sidecar value > config default > type-zero) so CEL exprs are total over `fields.*` and a
+/// missing/typo'd field never 500s /auth. Type mismatches and missing required fields are
+/// returned as advisory problems (they back `user check` exit 2 and the admin UI).
 fn effective_fields(
     cfg: &Config,
     raw: &toml::Table,
@@ -224,21 +236,33 @@ fn effective_fields(
     let mut out = BTreeMap::new();
     let mut errors = Vec::new();
     for (name, spec) in &cfg.fields {
-        match raw.get(name) {
-            Some(v) if type_ok(spec.type_, v) => {
-                out.insert(name.clone(), v.clone());
+        let value = match raw.get(name) {
+            Some(v) if type_ok(spec.type_, v) => v.clone(),
+            Some(_) => {
+                errors.push(format!("field `{name}` is not a {:?}", spec.type_));
+                fallback(spec.type_, spec.default.as_ref())
             }
-            Some(_) => errors.push(format!("field `{name}` is not a {:?}", spec.type_)),
-            None => match &spec.default {
-                Some(d) => {
-                    out.insert(name.clone(), d.clone());
+            None => {
+                if spec.required && spec.default.is_none() {
+                    errors.push(format!("required field `{name}` is missing"));
                 }
-                None if spec.required => errors.push(format!("required field `{name}` is missing")),
-                None => {}
-            },
-        }
+                fallback(spec.type_, spec.default.as_ref())
+            }
+        };
+        out.insert(name.clone(), value);
     }
     (out, errors)
+}
+
+/// Config default if present, else the type's zero value (false / "").
+fn fallback(t: FieldType, default: Option<&toml::Value>) -> toml::Value {
+    if let Some(d) = default {
+        return d.clone();
+    }
+    match t {
+        FieldType::Bool => toml::Value::Boolean(false),
+        FieldType::String | FieldType::Email => toml::Value::String(String::new()),
+    }
 }
 
 fn type_ok(t: FieldType, v: &toml::Value) -> bool {
@@ -275,7 +299,7 @@ fn serialize_htpasswd(entries: &BTreeMap<String, String>) -> String {
 
 fn read_sidecar(path: &Path) -> anyhow::Result<Sidecar> {
     let text = read_opt(path)?.unwrap_or_default();
-    Ok(toml::from_str(&text).with_context(|| format!("parsing sidecar {}", path.display()))?)
+    toml::from_str(&text).with_context(|| format!("parsing sidecar {}", path.display()))
 }
 
 /// First 16 hex (8 bytes) of SHA-256 over the raw hash field.
@@ -299,13 +323,19 @@ fn mtime(path: &Path) -> Option<SystemTime> {
 /// Write via a temp file in the same dir + atomic rename, preserving the existing file's
 /// permissions (new files get 0600 — the data is password hashes).
 fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
-    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    let mode = fs::metadata(path).map(|m| m.permissions().mode()).unwrap_or(0o600);
+    let dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mode = fs::metadata(path)
+        .map(|m| m.permissions().mode())
+        .unwrap_or(0o600);
     let mut tmp = tempfile::NamedTempFile::new_in(dir)
         .with_context(|| format!("creating temp file in {}", dir.display()))?;
     tmp.write_all(contents.as_bytes())?;
     tmp.flush()?;
-    tmp.as_file().set_permissions(fs::Permissions::from_mode(mode & 0o777))?;
+    tmp.as_file()
+        .set_permissions(fs::Permissions::from_mode(mode & 0o777))?;
     tmp.persist(path)
         .map_err(|e| anyhow::anyhow!("persisting {}: {}", path.display(), e))?;
     Ok(())
@@ -348,7 +378,11 @@ mod tests {
     fn parse_and_defaults_and_pwd_fp() {
         let dir = tempfile::tempdir().unwrap();
         let htpasswd = dir.path().join(".htpasswd");
-        fs::write(&htpasswd, "alice:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n").unwrap();
+        fs::write(
+            &htpasswd,
+            "alice:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n",
+        )
+        .unwrap();
         fs::write(
             dir.path().join(".htwicket.toml"),
             "[users.alice]\nis_admin = true\ndisplay_name = \"Alice\"\n",
@@ -358,7 +392,10 @@ mod tests {
         let db = UserDb::load(cfg_with_fields(htpasswd)).unwrap();
         let alice = &db.users["alice"];
         assert_eq!(alice.fields["is_admin"], toml::Value::Boolean(true));
-        assert_eq!(alice.fields["display_name"], toml::Value::String("Alice".into()));
+        assert_eq!(
+            alice.fields["display_name"],
+            toml::Value::String("Alice".into())
+        );
         assert!(alice.hash.is_some());
         assert_eq!(alice.pwd_fp.as_ref().unwrap().len(), 16);
     }
@@ -368,7 +405,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let htpasswd = dir.path().join(".htpasswd");
         let sidecar = dir.path().join(".htwicket.toml");
-        fs::write(&htpasswd, "bob:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n").unwrap();
+        fs::write(
+            &htpasswd,
+            "bob:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n",
+        )
+        .unwrap();
         // App-foreign field htwicket knows nothing about — must survive a write.
         fs::write(&sidecar, "[users.bob]\nquota_mb = 500\n").unwrap();
 
@@ -378,18 +419,32 @@ mod tests {
         db.write_fields("bob", &f).unwrap();
 
         let written = fs::read_to_string(&sidecar).unwrap();
-        assert!(written.contains("quota_mb"), "unknown field dropped:\n{written}");
+        assert!(
+            written.contains("quota_mb"),
+            "unknown field dropped:\n{written}"
+        );
         assert!(written.contains("is_admin"));
-        assert_eq!(db.users["bob"].fields["is_admin"], toml::Value::Boolean(true));
+        assert_eq!(
+            db.users["bob"].fields["is_admin"],
+            toml::Value::Boolean(true)
+        );
     }
 
     #[test]
     fn schema_errors_flags_type_mismatch() {
         let dir = tempfile::tempdir().unwrap();
         let htpasswd = dir.path().join(".htpasswd");
-        fs::write(&htpasswd, "carol:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n").unwrap();
+        fs::write(
+            &htpasswd,
+            "carol:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n",
+        )
+        .unwrap();
         // is_admin declared bool but set to a string → schema error.
-        fs::write(dir.path().join(".htwicket.toml"), "[users.carol]\nis_admin = \"yes\"\n").unwrap();
+        fs::write(
+            dir.path().join(".htwicket.toml"),
+            "[users.carol]\nis_admin = \"yes\"\n",
+        )
+        .unwrap();
 
         let db = UserDb::load(cfg_with_fields(htpasswd)).unwrap();
         assert!(!db.schema_errors("carol").is_empty());

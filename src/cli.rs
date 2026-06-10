@@ -10,7 +10,10 @@ use crate::config::Config;
 use crate::state::UserDb;
 
 #[derive(Parser)]
-#[command(version, about = "Auth gateway + .htpasswd user manager for nginx auth_request")]
+#[command(
+    version,
+    about = "Auth gateway + .htpasswd user manager for nginx auth_request"
+)]
 pub struct Cli {
     /// Config file path
     #[arg(short, long, default_value = "/etc/htwicket.toml")]
@@ -33,13 +36,25 @@ pub enum Command {
 #[derive(Subcommand)]
 pub enum UserAction {
     /// Add user; password from stdin/tty prompt, or --random (generates + prints)
-    Add { name: String, #[arg(long)] random: bool },
+    Add {
+        name: String,
+        #[arg(long)]
+        random: bool,
+    },
     /// Set password; stdin/tty prompt, or --random
-    Passwd { name: String, #[arg(long)] random: bool },
-    Del { name: String },
+    Passwd {
+        name: String,
+        #[arg(long)]
+        random: bool,
+    },
+    Del {
+        name: String,
+    },
     List,
     /// Exit 0 = exists + password set, 1 = missing, 2 = sidecar fields fail schema
-    Check { name: String },
+    Check {
+        name: String,
+    },
 }
 
 pub fn run() -> anyhow::Result<()> {

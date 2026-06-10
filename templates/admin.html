@@ -2,7 +2,43 @@
 {% block title %}{{ tr("User management") }}{% endblock %}
 {% block content %}
 <h1>{{ tr("User management") }}</h1>
-{# table: username + one column per schema field (rendered by type), actions:
-   set password / delete. Below: add-user form. No pagination (htadmin scale). #}
-{% block users %}{% endblock %}
+{% if let Some(error) = error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if let Some(notice) = notice %}<p role="status">{{ notice }}</p>{% endif %}
+
+{# One form per user: edit all fields, optionally set a new password, save or delete.
+   No pagination (htadmin scale). #}
+{% for u in users %}
+<article>
+  <form method="post">
+    <input type="hidden" name="username" value="{{ u.name }}">
+    <h3>{{ u.name }}{% if !u.has_password %} <small>({{ tr("no password") }})</small>{% endif %}</h3>
+    {% for f in u.fields %}
+      {% if f.is_bool %}
+    <label><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
+      {% else %}
+    <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
+      {% endif %}
+    {% endfor %}
+    <label>{{ tr("New password (leave blank to keep)") }} <input type="password" name="new_password" autocomplete="new-password"></label>
+    <button type="submit" name="action" value="save">{{ tr("Save") }}</button>
+    <button type="submit" name="action" value="delete">{{ tr("Delete") }}</button>
+  </form>
+</article>
+{% endfor %}
+
+<article>
+  <form method="post">
+    <h3>{{ tr("Add user") }}</h3>
+    <label>{{ tr("Username") }} <input name="username" required></label>
+    {% for f in add_fields %}
+      {% if f.is_bool %}
+    <label><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
+      {% else %}
+    <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
+      {% endif %}
+    {% endfor %}
+    <label>{{ tr("Password") }} <input type="password" name="new_password" autocomplete="new-password" required></label>
+    <button type="submit" name="action" value="add">{{ tr("Add user") }}</button>
+  </form>
+</article>
 {% endblock %}

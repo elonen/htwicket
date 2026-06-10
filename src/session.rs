@@ -7,7 +7,7 @@ use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 
 use anyhow::Context;
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
 pub const COOKIE_NAME: &str = "htwicket_session";
@@ -68,7 +68,11 @@ pub fn remint(prev: &Claims, now: u64, session_hours: u32) -> Claims {
 }
 
 pub fn mint(claims: &Claims, secret: &[u8]) -> anyhow::Result<String> {
-    let token = encode(&Header::new(Algorithm::HS256), claims, &EncodingKey::from_secret(secret))?;
+    let token = encode(
+        &Header::new(Algorithm::HS256),
+        claims,
+        &EncodingKey::from_secret(secret),
+    )?;
     Ok(token)
 }
 
@@ -103,8 +107,7 @@ pub fn load_or_create_secret(cfg: &crate::config::Config) -> anyhow::Result<Vec<
             fs::create_dir_all(&cfg.state_dir)
                 .with_context(|| format!("creating state dir {}", cfg.state_dir.display()))?;
             let secret = random_bytes(32)?;
-            fs::write(&path, &secret)
-                .with_context(|| format!("writing {}", path.display()))?;
+            fs::write(&path, &secret).with_context(|| format!("writing {}", path.display()))?;
             fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
             tracing::info!("generated new jwt_secret at {}", path.display());
             Ok(secret)
@@ -126,7 +129,14 @@ mod tests {
     const SECRET: &[u8] = b"test-secret-key";
 
     fn claims(now: u64) -> Claims {
-        new_session("alice", vec!["pw".into()], Some("deadbeefdeadbeef".into()), Default::default(), now, 12)
+        new_session(
+            "alice",
+            vec!["pw".into()],
+            Some("deadbeefdeadbeef".into()),
+            Default::default(),
+            now,
+            12,
+        )
     }
 
     #[test]

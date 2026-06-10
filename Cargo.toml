@@ -46,6 +46,7 @@ htpasswd-verify = "0.3.0"
 # clean and the .deb free of shared-lib deps). use_pem dropped: we only use raw HS256 secrets.
 jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust_crypto"] }
 pwhash = "1.0.0"
+rpassword = "7.4.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.11.0"

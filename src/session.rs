@@ -113,7 +113,7 @@ pub fn load_or_create_secret(cfg: &crate::config::Config) -> anyhow::Result<Vec<
     }
 }
 
-fn random_bytes(n: usize) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn random_bytes(n: usize) -> anyhow::Result<Vec<u8>> {
     let mut buf = vec![0u8; n];
     fs::File::open("/dev/urandom")?.read_exact(&mut buf)?;
     Ok(buf)

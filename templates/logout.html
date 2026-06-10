@@ -1,8 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ tr("Sign out") }}{% endblock %}
 {% block content %}
-<h1>{{ tr("Sign out") }}</h1>
-<form method="post">
-  <button type="submit">{{ tr("Sign out") }}</button>
-</form>
+<section class="card">
+  <h1>{{ tr("Sign out") }}</h1>
+  <p class="lede">{{ tr("You are signed in as") }} <strong class="ident">{{ username }}</strong>.</p>
+  <form method="post">
+    <div class="actions">
+      <button type="submit">{{ tr("Sign out") }}</button>
+      <a class="btn btn-secondary" href="/">{{ tr("Cancel") }}</a>
+    </div>
+  </form>
+</section>
 {% endblock %}

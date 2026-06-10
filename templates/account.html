@@ -1,26 +1,49 @@
 {% extends "base.html" %}
 {% block title %}{{ tr("My account") }}{% endblock %}
 {% block content %}
-<h1>{{ tr("My account") }} — {{ username }}</h1>
-{% if let Some(error) = error %}<p role="alert">{{ error }}</p>{% endif %}
-{% if let Some(notice) = notice %}<p role="status">{{ notice }}</p>{% endif %}
-<form method="post">
-  {% for f in fields %}
-    {% if f.editable %}
-      {% if f.is_bool %}
-  <label><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
-      {% else %}
-  <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
-      {% endif %}
-    {% else %}
-  <p>{{ f.label }}: {{ f.value }}</p>
+<section class="card">
+  <h1>{{ tr("My account") }} <span class="sub">— {{ username }}</span></h1>
+  {% if let Some(error) = error %}
+  <div class="alert alert--error" role="alert">
+    <span class="alert-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6"></path><path d="M12 16.5v.5"></path></svg>
+    </span>
+    <p>{{ error }}</p>
+  </div>
+  {% endif %}
+  {% if let Some(notice) = notice %}<p class="muted" role="status">{{ notice }}</p>{% endif %}
+
+  <form method="post">
+    {% if !fields.is_empty() %}
+    <div class="fieldlist">
+      {# Read-only fields render disabled and WITHOUT a name — display only, never submitted. #}
+      {% for f in fields %}
+        {% if f.is_bool %}
+      <label class="check">
+        <input type="checkbox"{% if f.editable %} name="f_{{ f.name }}"{% else %} disabled{% endif %}{% if f.checked %} checked{% endif %}>
+        <span>{{ f.label }}{% if !f.editable %} <small><span class="tag">{{ tr("read-only") }}</span> {{ tr("set by an admin") }}</small>{% endif %}</span>
+      </label>
+        {% else %}
+      <label for="f_{{ f.name }}">{{ f.label }}{% if !f.editable %} <span class="field-note"><span class="tag">{{ tr("read-only") }}</span></span>{% endif %}
+        <input id="f_{{ f.name }}" type="{{ f.input_type }}" value="{{ f.value }}"{% if f.editable %} name="f_{{ f.name }}"{% else %} disabled{% endif %}>
+      </label>
+        {% endif %}
+      {% endfor %}
+    </div>
     {% endif %}
-  {% endfor %}
-  <fieldset>
-    <legend>{{ tr("Change password") }}</legend>
-    <label>{{ tr("Current password") }} <input type="password" name="old_password" autocomplete="current-password"></label>
-    <label>{{ tr("New password") }} <input type="password" name="new_password" autocomplete="new-password"></label>
-  </fieldset>
-  <button type="submit">{{ tr("Save") }}</button>
-</form>
+
+    <fieldset>
+      <legend>{{ tr("Change password") }}</legend>
+      <label for="old_password">{{ tr("Current password") }}
+        <input id="old_password" type="password" name="old_password" autocomplete="current-password">
+      </label>
+      <label for="new_password">{{ tr("New password") }}
+        <input id="new_password" type="password" name="new_password" autocomplete="new-password" minlength="8">
+        <small>{{ tr("Leave blank to keep your current password. Changing it signs you out of all sessions.") }}</small>
+      </label>
+    </fieldset>
+
+    <button type="submit">{{ tr("Save") }}</button>
+  </form>
+</section>
 {% endblock %}

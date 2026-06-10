@@ -1,44 +1,94 @@
 {% extends "base.html" %}
 {% block title %}{{ tr("User management") }}{% endblock %}
+{% block container_mod %} container--wide{% endblock %}
 {% block content %}
-<h1>{{ tr("User management") }}</h1>
-{% if let Some(error) = error %}<p role="alert">{{ error }}</p>{% endif %}
-{% if let Some(notice) = notice %}<p role="status">{{ notice }}</p>{% endif %}
+<div class="toolbar">
+  <div>
+    <h1>{{ tr("User management") }}</h1>
+    <p class="lede" style="margin:0">{{ tr("Set a password, edit profile fields, or delete a user.") }}</p>
+  </div>
+  <span class="count">{{ users.len() }} {{ tr("users") }}</span>
+</div>
 
-{# One form per user: edit all fields, optionally set a new password, save or delete.
-   No pagination (htadmin scale). #}
-{% for u in users %}
-<article>
-  <form method="post">
+{% if let Some(error) = error %}
+<div class="alert alert--error" role="alert">
+  <span class="alert-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6"></path><path d="M12 16.5v.5"></path></svg>
+  </span>
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+{% if let Some(notice) = notice %}<p class="muted" role="status">{{ notice }}</p>{% endif %}
+
+{% if users.is_empty() %}
+<div class="empty">
+  <h2>{{ tr("No users yet") }}</h2>
+  <p>{{ tr("Add the first account below.") }}</p>
+</div>
+{% else %}
+<div class="user-list">
+  {# Each user is its own form: edit fields + set password (Save), or Delete. #}
+  {% for u in users %}
+  <form class="user-row" method="post">
     <input type="hidden" name="username" value="{{ u.name }}">
-    <h3>{{ u.name }}{% if !u.has_password %} <small>({{ tr("no password") }})</small>{% endif %}</h3>
-    {% for f in u.fields %}
-      {% if f.is_bool %}
-    <label><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
-      {% else %}
-    <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
-      {% endif %}
-    {% endfor %}
-    <label>{{ tr("New password (leave blank to keep)") }} <input type="password" name="new_password" autocomplete="new-password"></label>
-    <button type="submit" name="action" value="save">{{ tr("Save") }}</button>
-    <button type="submit" name="action" value="delete">{{ tr("Delete") }}</button>
-  </form>
-</article>
-{% endfor %}
+    <div class="ur-head">
+      <label>{{ tr("Username") }}{% if !u.has_password %} <span class="tag">{{ tr("no password") }}</span>{% endif %}
+        <input class="mono-input" value="{{ u.name }}" disabled>
+      </label>
+      <label>{{ tr("Set new password") }}
+        <input type="password" name="new_password" placeholder="{{ tr("Leave blank to keep") }}" autocomplete="new-password" minlength="8">
+      </label>
+      <button type="submit" class="btn-danger ur-del" name="action" value="delete">{{ tr("Delete") }}</button>
+    </div>
 
-<article>
-  <form method="post">
-    <h3>{{ tr("Add user") }}</h3>
-    <label>{{ tr("Username") }} <input name="username" required></label>
+    {% if !u.fields.is_empty() %}
+    <details class="ur-fields">
+      <summary>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        {{ tr("Profile fields") }} <span class="count">{{ u.fields.len() }}</span>
+      </summary>
+      <div class="ur-fieldgrid">
+        {% for f in u.fields %}
+          {% if f.is_bool %}
+        <label class="check"><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
+          {% else %}
+        <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    <div class="actions" style="margin-top:.9rem">
+      <button type="submit" name="action" value="save">{{ tr("Save") }}</button>
+    </div>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
+<hr>
+
+<form method="post">
+  <fieldset>
+    <legend>{{ tr("Add user") }}</legend>
+    <div class="grid">
+      <label for="new_username">{{ tr("Username") }} <span class="req" aria-hidden="true">*</span>
+        <input id="new_username" class="mono-input" name="username" autocomplete="off" autocapitalize="none"
+               spellcheck="false" pattern="[A-Za-z0-9@._\-]{1,64}" required>
+      </label>
+      <label for="add_password">{{ tr("Password") }} <span class="req" aria-hidden="true">*</span>
+        <input id="add_password" type="password" name="new_password" autocomplete="new-password" minlength="8" required>
+      </label>
+    </div>
     {% for f in add_fields %}
       {% if f.is_bool %}
-    <label><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
+    <label class="check"><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
       {% else %}
     <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
       {% endif %}
     {% endfor %}
-    <label>{{ tr("Password") }} <input type="password" name="new_password" autocomplete="new-password" required></label>
     <button type="submit" name="action" value="add">{{ tr("Add user") }}</button>
-  </form>
-</article>
+  </fieldset>
+</form>
 {% endblock %}

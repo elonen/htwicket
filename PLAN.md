@@ -12,7 +12,8 @@ License: MIT OR Apache-2.0. Sibling project of ldap_authz_proxy.
 
 - axum + tokio + tower-http — HTTP
 - figment + clap — config: TOML file → env override → CLI args
-- askama — server-rendered templates, plain HTML forms, embedded classless CSS (pico.css). No JS build.
+- askama — server-rendered templates, plain HTML forms, one embedded stylesheet (htwicket.css:
+  light/dark, responsive, no JS, no runtime assets). No JS build.
 - jsonwebtoken — session cookie = JWT, HS256 **pinned** (token-header alg ignored)
 - cel-interpreter (clarkmcc/cel-rust) — header/claim/superadmin expressions
 - htpasswd-verify (DES, $apr1$, SHA1, bcrypt) + pwhash ($1$, $5$, $6$) + bcrypt (writing) — verify exact coverage with the hash-matrix unit test.

@@ -4,12 +4,21 @@
 
 use askama::Template;
 
-/// Template-facing translation hook. askama resolves `{{ tr("...") }}` as `self.tr(...)`, so it
-/// must be a method; the trait threads each view's negotiated `lang` into the i18n lookup.
+/// Shared template helpers. askama resolves `{{ tr("...") }}` / `{{ css() }}` as method calls on
+/// the view, so these live on a trait every view implements: `tr` threads the negotiated locale
+/// into the i18n lookup, `css` inlines the embedded stylesheet, `version` stamps the footer.
 trait Tr {
     fn lang(&self) -> &str;
     fn tr(&self, msgid: &str) -> String {
         crate::i18n::tr(self.lang(), msgid)
+    }
+    /// The whole stylesheet, embedded in the binary and inlined into <style> (use the `safe`
+    /// filter — CSS contains `>` and `"`). One self-contained sheet, no runtime asset fetch.
+    fn css(&self) -> &'static str {
+        include_str!("htwicket.css")
+    }
+    fn version(&self) -> &'static str {
+        env!("CARGO_PKG_VERSION")
     }
 }
 impl Tr for LoginTemplate {
@@ -52,6 +61,8 @@ pub struct LoginTemplate {
     pub insecure_cookies: bool,
     pub error: Option<String>,
     pub rd: String,
+    /// Submitted username, preserved on a failed attempt (empty on first load).
+    pub username: String,
 }
 
 #[derive(Template)]
@@ -59,6 +70,7 @@ pub struct LoginTemplate {
 pub struct LogoutTemplate {
     pub lang: String,
     pub insecure_cookies: bool,
+    pub username: String,
 }
 
 #[derive(Template)]

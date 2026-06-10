@@ -190,7 +190,13 @@ async fn login_page(
     headers: HeaderMap,
     Query(q): Query<RdQuery>,
 ) -> Handler {
-    render_login(&state, &lang_of(&headers), q.rd.unwrap_or_default(), None)
+    render_login(
+        &state,
+        &lang_of(&headers),
+        q.rd.unwrap_or_default(),
+        None,
+        String::new(),
+    )
 }
 
 #[derive(Deserialize)]
@@ -214,7 +220,7 @@ async fn login_submit(
     let rd = form.rd.unwrap_or_default();
     let ip = client_ip(&headers);
     if let Err(msg) = state.limiter.check(&form.username, &ip) {
-        return render_login(&state, &lang, rd, Some(msg));
+        return render_login(&state, &lang, rd, Some(msg), form.username.clone());
     }
     ensure_fresh(&state).await?;
 
@@ -232,6 +238,7 @@ async fn login_submit(
             &lang,
             rd,
             Some(tr(&lang, "Invalid username or password.")),
+            form.username.clone(),
         );
     }
     state.limiter.record_success(&form.username, &ip);
@@ -274,9 +281,15 @@ async fn login_submit(
 }
 
 async fn logout_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
+    // Confirm page needs the current identity for "signed in as <user>". Not logged in => nothing
+    // to confirm; send them to login.
+    let Some(claims) = current_claims(&headers, &state) else {
+        return Ok(redirect_to_login(&state, "/"));
+    };
     render(LogoutTemplate {
         lang: lang_of(&headers),
         insecure_cookies: state.cfg.insecure_cookies,
+        username: claims.sub,
     })
 }
 
@@ -540,12 +553,19 @@ async fn render_admin(
     })
 }
 
-fn render_login(state: &AppState, lang: &str, rd: String, error: Option<String>) -> Handler {
+fn render_login(
+    state: &AppState,
+    lang: &str,
+    rd: String,
+    error: Option<String>,
+    username: String,
+) -> Handler {
     render(LoginTemplate {
         lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
         error,
         rd,
+        username,
     })
 }
 

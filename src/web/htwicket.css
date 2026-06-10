@@ -1,0 +1,560 @@
+/* ============================================================================
+   htwicket.css — shared stylesheet for the htwicket auth gateway GUI
+   "Quiet infrastructure": cool near-grayscale, one restrained violet accent,
+   system sans for text + system mono for identifiers/data.
+
+   Self-contained: no @import, no web fonts, no JS dependency. Ships embedded
+   in the binary (inline <style> via include_str!). Works with JS disabled and
+   degrades cleanly to semantic HTML in text browsers (Lynx).
+   ========================================================================== */
+
+/* ---- Design tokens ------------------------------------------------------- */
+:root {
+  color-scheme: light dark;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+
+  /* Light palette (cool neutral) */
+  --bg:            oklch(0.984 0.003 270);
+  --surface:       oklch(1 0 0);
+  --surface-2:     oklch(0.972 0.004 270);
+  --surface-inset: oklch(0.965 0.004 270);
+  --border:        oklch(0.905 0.005 270);
+  --border-strong: oklch(0.835 0.007 270);
+
+  --text:        oklch(0.29 0.012 275);
+  --text-muted:  oklch(0.515 0.012 275);
+  --text-faint:  oklch(0.62 0.009 275);
+
+  /* Accent is assembled from hue/chroma/lightness components, so the entire
+     palette can be re-themed by overriding a single hue. See the
+     [data-accent="…"] themes below; set one on <html> to switch the whole UI. */
+  --acc-h:  262;     /* hue  — slate (near-neutral) */
+  --acc-c:  0.022;   /* chroma     */
+  --acc-l:  0.515;   /* base L     */
+  --acc-lh: 0.455;   /* hover L    */
+  --accent:          oklch(var(--acc-l)  var(--acc-c) var(--acc-h));
+  --accent-hover:    oklch(var(--acc-lh) var(--acc-c) var(--acc-h));
+  --accent-contrast: oklch(0.99 0.01 var(--acc-h));
+  --accent-soft:     oklch(0.955 0.028 var(--acc-h));
+  --accent-line:     oklch(0.80 0.06 var(--acc-h));
+
+  --danger:       oklch(0.55 0.115 14);
+  --danger-hover: oklch(0.49 0.115 14);
+  --danger-soft:  oklch(0.962 0.032 14);
+  --danger-line:  oklch(0.82 0.10 14);
+
+  --warn:      oklch(0.62 0.12 70);
+  --warn-soft: oklch(0.965 0.045 80);
+  --warn-line: oklch(0.83 0.10 75);
+  --warn-text: oklch(0.45 0.09 60);
+
+  --radius:    7px;
+  --radius-sm: 5px;
+  --radius-lg: 11px;
+  --ring: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent);
+  --shadow-card: 0 1px 2px oklch(0.4 0.02 275 / 0.05), 0 6px 22px oklch(0.4 0.02 275 / 0.06);
+  --tap: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:            oklch(0.176 0.008 274);
+    --surface:       oklch(0.212 0.009 274);
+    --surface-2:     oklch(0.246 0.010 274);
+    --surface-inset: oklch(0.196 0.009 274);
+    --border:        oklch(0.305 0.012 274);
+    --border-strong: oklch(0.385 0.014 274);
+
+    --text:        oklch(0.925 0.006 274);
+    --text-muted:  oklch(0.715 0.010 274);
+    --text-faint:  oklch(0.585 0.010 274);
+
+    --acc-c:  0.03;
+    --acc-l:  0.71;
+    --acc-lh: 0.78;
+    /* --accent / --accent-hover recompute automatically from the components above */
+    --accent-contrast: oklch(0.16 0.02 var(--acc-h));
+    --accent-soft:     oklch(0.30 0.045 var(--acc-h));
+    --accent-line:     oklch(0.46 0.08 var(--acc-h));
+
+    --danger:       oklch(0.55 0.115 14);
+    --danger-hover: oklch(0.49 0.115 14);
+    --danger-soft:  oklch(0.31 0.06 14);
+    --danger-line:  oklch(0.46 0.1 14);
+
+    --warn:      oklch(0.80 0.12 80);
+    --warn-soft: oklch(0.30 0.055 75);
+    --warn-line: oklch(0.46 0.09 75);
+    --warn-text: oklch(0.86 0.09 82);
+
+    --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3), 0 8px 26px oklch(0 0 0 / 0.35);
+  }
+}
+
+/* ---- Accent themes: set data-accent on <html> (or any wrapper) ----------- */
+/* Re-compose the accent on the themed element so a downstream hue override
+   actually takes effect (a value composed only on :root would inherit fixed). */
+[data-accent] {
+  --accent:          oklch(var(--acc-l)  var(--acc-c) var(--acc-h));
+  --accent-hover:    oklch(var(--acc-lh) var(--acc-c) var(--acc-h));
+  --accent-contrast: oklch(0.99 0.01 var(--acc-h));
+  --accent-soft:     oklch(0.955 0.028 var(--acc-h));
+  --accent-line:     oklch(0.80 0.06 var(--acc-h));
+}
+@media (prefers-color-scheme: dark) {
+  [data-accent] {
+    --accent-contrast: oklch(0.16 0.02 var(--acc-h));
+    --accent-soft:     oklch(0.30 0.045 var(--acc-h));
+    --accent-line:     oklch(0.46 0.08 var(--acc-h));
+  }
+}
+[data-accent="violet"] { --acc-h: 292; }
+[data-accent="blue"]   { --acc-h: 256; }
+[data-accent="indigo"] { --acc-h: 274; }
+[data-accent="teal"]   { --acc-h: 196; }
+[data-accent="green"]  { --acc-h: 150; }
+[data-accent="slate"]  { --acc-h: 262; --acc-c: 0.022; }
+[data-accent="copper"] { --acc-h: 58;  --acc-c: 0.085; }
+
+/* ---- Reset / base -------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Subtle full-page top hairline of accent — quiet "this guards a door" cue */
+body::before {
+  content: "";
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-line));
+  opacity: 0.9;
+}
+
+:where(a) { color: var(--accent); text-underline-offset: 2px; text-decoration-thickness: 1px; }
+:where(a:hover) { color: var(--accent-hover); }
+
+::selection { background: var(--accent-soft); color: var(--text); }
+
+/* ---- Page shell (maps to base.html <main class="container">) ------------- */
+.container {
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 2.5rem) clamp(1rem, 4vw, 1.75rem) 2.5rem;
+  flex: 1 0 auto;
+}
+.container.container--wide { max-width: 64rem; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: clamp(1.4rem, 4vw, 2.1rem);
+}
+
+/* Brand / page lockup */
+.lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.4rem;
+}
+.lockup .mark {
+  width: 30px; height: 30px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
+}
+.lockup .mark svg { width: 17px; height: 17px; display: block; }
+.lockup .wordmark {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+.lockup .wordmark .tld { color: var(--text-faint); font-weight: 500; }
+
+/* ---- Headings & text ----------------------------------------------------- */
+h1 {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.35rem;
+  text-wrap: balance;
+}
+h1 .sub {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+.lede { color: var(--text-muted); margin: 0 0 1.6rem; }
+p { margin: 0 0 1rem; }
+small, .small { font-size: 0.82rem; }
+.muted { color: var(--text-muted); }
+strong, .ident { font-weight: 600; }
+.mono, code, .ident { font-family: var(--font-mono); }
+code {
+  font-size: 0.88em;
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.05em 0.4em;
+}
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.75rem 0;
+}
+
+/* ---- Alerts (role="alert"): warning banner + form error ------------------ */
+.alert {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0.8rem 0.95rem;
+  margin: 0 0 1.4rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.alert .alert-icon { flex: none; width: 18px; height: 18px; margin-top: 0.12rem; }
+.alert .alert-icon svg { width: 100%; height: 100%; display: block; }
+.alert p { margin: 0; }
+.alert b { font-weight: 650; }
+
+.alert--warn {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-text);
+}
+.alert--warn .alert-icon { color: var(--warn); }
+
+.alert--error {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+.alert--error .alert-icon { color: var(--danger); }
+
+/* ---- Forms --------------------------------------------------------------- */
+form { margin: 0; }
+
+label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 550;
+  color: var(--text);
+  margin-bottom: 1rem;
+}
+label > .req { color: var(--danger); margin-left: 0.15rem; }
+label > small {
+  display: block;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  min-height: var(--tap);
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  transition: border-color 0.12s, box-shadow 0.12s;
+  appearance: none;
+}
+input::placeholder { color: var(--text-faint); }
+
+/* Monospace for identifiers/data. Selectors are bumped to match the base
+   input rule's specificity (it uses :not():not()) so the mono family wins. */
+input:not([type="checkbox"]).mono-input,
+input:not([type="checkbox"])[type="password"],
+input:not([type="checkbox"])[type="email"],
+input:not([type="checkbox"])[name^="username"],
+input:not([type="checkbox"])[name^="new_username"] { font-family: var(--font-mono); font-size: 0.9rem; }
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-color: var(--accent);
+}
+
+input:disabled,
+input[readonly] {
+  background: var(--surface-inset);
+  color: var(--text-muted);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+/* Native checkboxes, enhanced — robust, keyboard-ok, fine in text browsers */
+input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex: none;
+}
+input[type="checkbox"]:disabled { cursor: not-allowed; accent-color: var(--text-faint); }
+
+/* Boolean field row: checkbox + label inline */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  font-weight: 550;
+  font-size: 0.9rem;
+  min-height: var(--tap);
+  padding-top: 0.1rem;
+}
+.check input[type="checkbox"] { margin-top: 0.15rem; }
+.check small { display: block; font-weight: 400; color: var(--text-muted); }
+
+/* Validation */
+/* Validation. Selector bumped to out-specify the base input rule (:not():not()). */
+input:not([type="checkbox"])[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--danger);
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.1rem 0.2rem;
+  margin: 0 0 1.4rem;
+  background: var(--surface-2);
+}
+legend {
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0 0.45rem;
+}
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+@media (max-width: 30rem) { .grid { grid-template-columns: 1fr; } }
+
+/* ---- Buttons ------------------------------------------------------------- */
+button,
+.btn,
+input[type="submit"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: var(--tap);
+  padding: 0.55rem 1.1rem;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+button:hover, .btn:hover { background: var(--accent-hover); }
+button:active, .btn:active { transform: translateY(0.5px); }
+
+.btn-block { display: flex; width: 100%; }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.btn-secondary:hover { background: var(--surface-2); border-color: var(--text-faint); }
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+.btn-danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+
+.btn-sm { min-height: 38px; padding: 0.4rem 0.7rem; font-size: 0.85rem; }
+
+.actions { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; }
+.actions .grow { flex: 1; }
+
+/* ---- Account field list -------------------------------------------------- */
+.fieldlist { margin-bottom: 1.5rem; }
+.field-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--text-muted);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  vertical-align: 0.08em;
+}
+
+/* ---- Admin: per-user records (schema-agnostic) -------------------------- */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.4rem;
+}
+.count {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+}
+
+.user-list { display: grid; gap: 0.9rem; }
+
+.user-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 1.05rem 1.15rem 0.95rem;
+}
+
+/* Standard, always-visible controls: rename + set password + delete.
+   These three are core (htwicket knows them); they never depend on schema. */
+.ur-head {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.2fr) minmax(11rem, 1fr) auto;
+  align-items: end;
+  gap: 0.7rem 1rem;
+}
+.ur-head label { margin-bottom: 0; }
+.ur-head .ur-del { align-self: end; }
+@media (max-width: 36rem) {
+  .ur-head { grid-template-columns: 1fr; }
+  .ur-head .ur-del { justify-self: start; }
+}
+
+/* Configurable schema fields: stacked vertically inside a disclosure, so the
+   layout holds for an arbitrary set of fields (any count / order / type / name). */
+.ur-fields { margin-top: 0.45rem; }
+.ur-fields > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  user-select: none;
+}
+.ur-fields > summary::-webkit-details-marker { display: none; }
+.ur-fields > summary:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-sm); }
+.ur-fields .chev { width: 13px; height: 13px; flex: none; color: var(--text-faint); transition: transform 0.15s; }
+.ur-fields[open] > summary .chev { transform: rotate(90deg); }
+.ur-fields > summary .count { text-transform: none; letter-spacing: 0; }
+
+.ur-fieldgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  align-items: start;
+  gap: 0 1.4rem;
+  padding: 0.8rem 0 0;
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+.ur-fieldgrid > label { margin-bottom: 0.95rem; }
+.ur-fieldgrid .check { margin-bottom: 0.95rem; padding-top: 1.65rem; }
+@media (max-width: 28rem) { .ur-fieldgrid .check { padding-top: 0.1rem; } }
+
+/* Empty state */
+.empty {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.empty h2 { font-size: 1.05rem; margin: 0 0 0.3rem; color: var(--text); }
+
+/* ---- Footer -------------------------------------------------------------- */
+.foot {
+  flex: none;
+  text-align: center;
+  padding: 1.5rem 1rem 2rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.foot a { color: var(--text-muted); text-decoration: none; }
+.foot a:hover { color: var(--accent); text-decoration: underline; }
+.foot .dot { margin: 0 0.5rem; opacity: 0.5; }
+
+/* ---- Reduced motion ------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

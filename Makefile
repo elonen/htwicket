@@ -1,5 +1,6 @@
 SHELL := /bin/bash
 .PHONY: build test check test-and-check clean \
+        i18n i18n-extract i18n-update i18n-init i18n-stats \
         debian-local debian-docker debian-docker-one
 
 # ---- Cargo (host) ----
@@ -19,6 +20,63 @@ test-and-check: test check
 clean:
 	cargo clean
 	rm -rf dist_deb
+
+# ---- Internationalization (gettext) --------------------------------------
+#
+# English is the source language (= the msgid); there is no en.po and a missing
+# translation falls back to the English source. Translatable strings are `tr("...")`
+# in templates and `tr(lang, "...")` in Rust. build.rs compiles po/*.po straight into
+# the binary, so a plain `cargo build` is the whole "compile" step — there is none here.
+#
+#   make i18n-extract         # rebuild po/htwicket.pot from the sources
+#   make i18n-update          # merge the .pot into every existing po/<loc>.po
+#   make i18n-init LOCALE=fi  # start a new translation: po/fi.po
+#   make i18n-stats           # translation coverage per locale
+#   make i18n                 # extract + update
+#
+# Needs the gettext CLI tools (xgettext/msgmerge/msginit/msgfmt).
+
+POT := po/htwicket.pot
+# Single xgettext pass over Rust + templates. C mode finds `tr(...)` in both; tr:1 picks the
+# template msgid (1st arg) and tr:2 the Rust msgid (2nd arg, after the locale) — non-string
+# args are ignored. C mode prints a few benign "unterminated string/character" warnings on
+# Rust comments/strings; they do not affect extraction (real problems still surface).
+I18N_SOURCES := $(shell find src -name '*.rs') $(wildcard templates/*.html)
+
+i18n: i18n-extract i18n-update
+
+i18n-extract: $(POT)
+
+$(POT): $(I18N_SOURCES)
+	xgettext --language=C --from-code=UTF-8 --sort-by-file \
+		--keyword=tr:1 --keyword=tr:2 \
+		--package-name=htwicket --copyright-holder="htwicket authors" \
+		-o $@ $(I18N_SOURCES)
+	@# msgids are ASCII, so xgettext leaves charset=CHARSET; pin it to UTF-8 so msginit-derived
+	@# .po files (and accented msgstr) are UTF-8. Temp+mv keeps it portable (BSD/GNU sed differ).
+	@sed 's/charset=CHARSET/charset=UTF-8/' $@ > $@.tmp && mv $@.tmp $@
+	@echo "$@: $$(($$(grep -c '^msgid ' $@) - 1)) strings"
+
+i18n-update: $(POT)
+	@shopt -s nullglob; pos=(po/*.po); \
+	if [ $${#pos[@]} -eq 0 ]; then \
+		echo "no po/*.po yet — start one with: make i18n-init LOCALE=<xx>"; \
+	else \
+		for po in "$${pos[@]}"; do echo "msgmerge $$po"; \
+			msgmerge --update --backup=none --quiet "$$po" $(POT); done; \
+	fi
+
+i18n-init: $(POT)
+	@test -n "$(LOCALE)" || { echo "usage: make i18n-init LOCALE=fi"; exit 1; }
+	@test ! -e po/$(LOCALE).po || { echo "po/$(LOCALE).po already exists"; exit 1; }
+	msginit --no-translator --locale=$(LOCALE) --input=$(POT) --output-file=po/$(LOCALE).po
+	@echo "created po/$(LOCALE).po — translate the msgstr lines, then \`cargo build\` bakes it in"
+
+i18n-stats:
+	@shopt -s nullglob; pos=(po/*.po); \
+	if [ $${#pos[@]} -eq 0 ]; then echo "(no translations yet)"; \
+	else for po in "$${pos[@]}"; do printf "%s: " "$$po"; \
+		msgfmt --statistics "$$po" -o /dev/null; done; fi
 
 # ---- Debian packaging ----------------------------------------------------
 #

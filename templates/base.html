@@ -9,7 +9,7 @@
 <body>
   <main class="container">
     {% if insecure_cookies %}
-    <p role="alert">{{ tr("Insecure-cookie mode is enabled. Use only via localhost or an encrypted tunnel (VPN) — otherwise passwords and sessions are exposed.") }}</p>
+    <p role="alert">{{ tr("Insecure-cookie mode is enabled. Use only via localhost or an encrypted tunnel (VPN); otherwise passwords and sessions are exposed.") }}</p>
     {% endif %}
     {% block content %}{% endblock %}
   </main>

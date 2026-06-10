@@ -1,3 +1,4 @@
 target/
 dist_deb/
 .local-tmp/
+po/*.pot

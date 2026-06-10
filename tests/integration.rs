@@ -16,7 +16,7 @@ struct Server {
     child: Child,
     base: String,
     config: PathBuf,
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
 }
 
 impl Drop for Server {
@@ -95,7 +95,7 @@ expr = "fields.display_name != '' ? fields.display_name : username"
         child,
         base,
         config,
-        _dir: dir,
+        dir,
     }
 }
 
@@ -515,7 +515,7 @@ fn sliding_remint_emits_fresh_cookie() {
     // Positive: hand-mint a token whose iat is 7h old — past half of the default 12h idle window —
     // so /auth must slide it. session_idle_hours can't be tuned below 1h, so a live wait is
     // impossible; mint directly with the server's secret instead.
-    let secret = std::fs::read(srv._dir.path().join("state").join("jwt_secret")).unwrap();
+    let secret = std::fs::read(srv.dir.path().join("state").join("jwt_secret")).unwrap();
     let now = jsonwebtoken::get_current_timestamp();
     let orig_iat = now - 2 * 86400; // 2 days ago: distinct from iat, inside the 7-day absolute cap
     let claims = serde_json::json!({
@@ -575,7 +575,7 @@ fn basic_cache_cleared_on_file_reload() {
     // mtime, which forces a reload that clears the cache — so the old password must stop working
     // immediately rather than riding the cache until TTL expiry.
     let srv = spawn("");
-    let htpasswd = srv._dir.path().join(".htpasswd");
+    let htpasswd = srv.dir.path().join(".htpasswd");
     let c = reqwest::blocking::Client::new();
 
     // Prime the cache with a good Basic auth.

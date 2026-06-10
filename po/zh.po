@@ -179,3 +179,10 @@ msgstr "您已登录为"
 #: templates/logout.html:10
 msgid "Cancel"
 msgstr "取消"
+#: src/web/mod.rs:243
+msgid "Too many attempts from your network. Wait a minute and retry."
+msgstr "来自您网络的尝试次数过多。请等待一分钟后重试。"
+
+#: src/web/mod.rs:247
+msgid "Too many failed attempts. Try again shortly."
+msgstr "失败次数过多。请稍后再试。"

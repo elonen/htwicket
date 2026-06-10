@@ -17,8 +17,10 @@ use base64::Engine as _;
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
-use crate::cel::{self, CompiledExpr};
-use crate::config::{Config, FieldType};
+use crate::authn::{self, RateLimiter, Throttle, VerifyCache};
+use crate::cel::{self, CelValue, CompiledExpr};
+use crate::config::{Config, FieldSpec, FieldType};
+use crate::i18n::tr;
 use crate::session::{self, Claims};
 use crate::state::{User, UserDb};
 use templates::{
@@ -38,16 +40,16 @@ struct CompiledExpressions {
 struct AppState {
     cfg: Arc<Config>,
     db: Arc<RwLock<UserDb>>,
-    secret: Arc<Vec<u8>>,
+    keys: Arc<session::Keys>,
     compiled: Arc<CompiledExpressions>,
-    limiter: Arc<crate::authn::RateLimiter>,
-    cache: Arc<crate::authn::VerifyCache>,
+    limiter: Arc<RateLimiter>,
+    cache: Arc<VerifyCache>,
 }
 
 pub fn serve(cfg: Config) -> anyhow::Result<()> {
     let cfg = Arc::new(cfg);
     let compiled = Arc::new(compile_all(&cfg)?); // startup failure on a bad expr / header name
-    let secret = Arc::new(session::load_or_create_secret(&cfg)?);
+    let keys = Arc::new(session::Keys::new(&session::load_or_create_secret(&cfg)?));
     let db = Arc::new(RwLock::new(UserDb::load(cfg.clone())?));
     if cfg.insecure_cookies {
         tracing::warn!(
@@ -57,10 +59,10 @@ pub fn serve(cfg: Config) -> anyhow::Result<()> {
     let state = AppState {
         cfg: cfg.clone(),
         db,
-        secret,
+        keys,
         compiled,
-        limiter: Arc::new(crate::authn::RateLimiter::new()),
-        cache: Arc::new(crate::authn::VerifyCache::new()),
+        limiter: Arc::new(RateLimiter::new()),
+        cache: Arc::new(VerifyCache::new()),
     };
 
     tokio::runtime::Runtime::new()?.block_on(async move {
@@ -141,7 +143,7 @@ type Handler = Result<Response, AppError>;
 /// 200: X-Remote-User-Id + [headers.*] CEL outputs + sliding re-mint Set-Cookie.
 async fn auth(State(state): State<AppState>, headers: HeaderMap) -> Handler {
     ensure_fresh(&state).await?;
-    let db = state.db.read().await; // read-only path: no writes here, safe to hold across sync work
+    let db = state.db.read().await;
 
     // 1) Session cookie.
     if let Some(claims) = current_claims(&headers, &state)
@@ -151,7 +153,7 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap) -> Handler {
         let mut out = auth_response_headers(&state, user, &claims.sub)?;
         if session::needs_remint(&claims, session::now(), state.cfg.session_idle_hours) {
             let next = session::remint(&claims, session::now(), state.cfg.session_idle_hours);
-            let token = session::mint(&next, &state.secret)?;
+            let token = session::mint(&next, &state.keys)?;
             out.insert(header::SET_COOKIE, cookie_header(&token, &state.cfg)?);
         }
         return Ok((StatusCode::OK, out).into_response());
@@ -173,16 +175,23 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap) -> Handler {
         // even with the right password) and count only failures.
         let ip = client_ip(&headers);
         if state.limiter.check(&user, &ip).is_ok() {
-            if u.hash
-                .as_deref()
-                .is_some_and(|h| crate::authn::verify_password(&pass, h))
-            {
-                state.limiter.record_success(&user, &ip);
-                state.cache.store(&user, &pass);
+            let hash = u.hash.clone();
+            drop(db); // bcrypt takes ~100ms of CPU; don't hold the read lock across it
+            let good = match hash {
+                Some(h) => authn::verify_password_blocking(pass.clone(), h).await,
+                None => false,
+            };
+            if !good {
+                state.limiter.record_failure(&user, &ip);
+                return Ok(StatusCode::UNAUTHORIZED.into_response());
+            }
+            state.limiter.record_success(&user, &ip);
+            state.cache.store(&user, &pass);
+            let db = state.db.read().await; // re-acquire: the user may have changed mid-verify
+            if let Some(u) = db.users.get(&user) {
                 let out = auth_response_headers(&state, u, &user)?;
                 return Ok((StatusCode::OK, out).into_response());
             }
-            state.limiter.record_failure(&user, &ip);
         }
     }
 
@@ -229,7 +238,14 @@ async fn login_submit(
     let lang = lang_of(&headers);
     let rd = form.rd.unwrap_or_default();
     let ip = client_ip(&headers);
-    if let Err(msg) = state.limiter.check(&form.username, &ip) {
+    if let Err(t) = state.limiter.check(&form.username, &ip) {
+        let msg = match t {
+            Throttle::Ip => tr(
+                &lang,
+                "Too many attempts from your network. Wait a minute and retry.",
+            ),
+            Throttle::User => tr(&lang, "Too many failed attempts. Try again shortly."),
+        };
         return render_login(&state, &lang, rd, Some(msg), form.username.clone());
     }
     ensure_fresh(&state).await?;
@@ -238,9 +254,10 @@ async fn login_submit(
         let db = state.db.read().await;
         db.users.get(&form.username).and_then(|u| u.hash.clone())
     };
-    let good = hash
-        .as_deref()
-        .is_some_and(|h| crate::authn::verify_password(&form.password, h));
+    let good = match &hash {
+        Some(h) => authn::verify_password_blocking(form.password.clone(), h.clone()).await,
+        None => false,
+    };
     if !good {
         state.limiter.record_failure(&form.username, &ip);
         return render_login(
@@ -257,7 +274,7 @@ async fn login_submit(
     let hash = hash.unwrap();
     if state.cfg.upgrade_hash_on_login
         && !hash.starts_with("$2")
-        && let Ok(new_hash) = crate::authn::hash_password(&form.password)
+        && let Ok(new_hash) = authn::hash_password_blocking(form.password.clone()).await
     {
         let _ = state
             .db
@@ -282,7 +299,7 @@ async fn login_submit(
         session::now(),
         state.cfg.session_idle_hours,
     );
-    let token = session::mint(&claims, &state.secret)?;
+    let token = session::mint(&claims, &state.keys)?;
     let target = if valid_rd(&rd) { rd } else { "/".to_string() };
     let mut resp = Redirect::to(&target).into_response();
     resp.headers_mut()
@@ -310,7 +327,7 @@ async fn logout_submit(State(state): State<AppState>, headers: HeaderMap) -> Han
     }
     let mut resp = Redirect::to(&format!("{}/login", state.cfg.base_path)).into_response();
     resp.headers_mut()
-        .insert(header::SET_COOKIE, clear_cookie_header(&state.cfg)?);
+        .insert(header::SET_COOKIE, cookie_header("", &state.cfg)?);
     Ok(resp)
 }
 
@@ -365,15 +382,16 @@ async fn account_submit(
                 .get(&user)
                 .and_then(|u| u.hash.clone())
         };
-        let old_ok = current
-            .as_deref()
-            .is_some_and(|h| crate::authn::verify_password(old, h));
+        let old_ok = match &current {
+            Some(h) => authn::verify_password_blocking(old.to_string(), h.clone()).await,
+            None => false,
+        };
         if !old_ok {
             error = Some(tr(&lang, "Current password is incorrect."));
         } else if newpw.len() < state.cfg.min_password_len {
             error = Some(tr(&lang, "New password is too short."));
         } else {
-            let hash = crate::authn::hash_password(newpw)?;
+            let hash = authn::hash_password_blocking(newpw.clone()).await?;
             state.db.write().await.write_password(&user, &hash)?;
             notice = Some(tr(&lang, "Password changed."));
         }
@@ -390,14 +408,16 @@ async fn account_submit(
             .get(&user)
             .map(|u| u.fields.clone());
         if let Some(fields) = snapshot {
-            let snap = User {
-                hash: None,
-                pwd_fp: None,
-                fields,
-            };
-            let updates = collect_fields(&state.cfg, &form, |name| {
-                field_editable(&state, name, &snap, &user)
-            });
+            let ctx = cel::context(&fields, &user).ok();
+            let updates = collect_fields(
+                &state.cfg,
+                &form,
+                |name| format!("f_{name}"),
+                |name| {
+                    ctx.as_ref()
+                        .is_some_and(|ctx| field_editable(&state, name, ctx))
+                },
+            );
             if !updates.is_empty() {
                 state.db.write().await.write_fields(&user, &updates)?;
                 notice.get_or_insert_with(|| tr(&lang, "Saved."));
@@ -423,17 +443,26 @@ async fn account_submit(
 }
 
 async fn admin_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
-    let Some(claims) = current_claims(&headers, &state) else {
-        return Ok(redirect_to_login(&state, "/admin"));
-    };
-    ensure_fresh(&state).await?;
-    {
-        let db = state.db.read().await;
-        if !is_superadmin(&state, db.users.get(&claims.sub), &claims.sub) {
-            return Ok(StatusCode::FORBIDDEN.into_response());
-        }
+    if let Err(resp) = require_superadmin(&state, &headers).await {
+        return Ok(resp);
     }
     render_admin(&state, &lang_of(&headers), None, None).await
+}
+
+/// Shared /admin prologue: session claims (else login redirect), fresh DB, superadmin gate
+/// (else 403). Err carries the early-exit response.
+async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
+    let Some(claims) = current_claims(headers, state) else {
+        return Err(redirect_to_login(state, "/admin"));
+    };
+    ensure_fresh(state)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    let db = state.db.read().await;
+    if !is_superadmin(state, db.users.get(&claims.sub), &claims.sub) {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
+    Ok(())
 }
 
 /// Superadmins only. Actions: `save` (batch edit/rename + set passwords across all rows),
@@ -446,25 +475,19 @@ async fn admin_submit(
     if !origin_ok(&headers) {
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
-    let Some(claims) = current_claims(&headers, &state) else {
-        return Ok(redirect_to_login(&state, "/admin"));
-    };
-    ensure_fresh(&state).await?;
-    {
-        let db = state.db.read().await;
-        if !is_superadmin(&state, db.users.get(&claims.sub), &claims.sub) {
-            return Ok(StatusCode::FORBIDDEN.into_response());
-        }
+    if let Err(resp) = require_superadmin(&state, &headers).await {
+        return Ok(resp);
     }
 
     let lang = lang_of(&headers);
     let action = form.get("action").map(String::as_str).unwrap_or("");
+    // Outer Err = internal failure (500 + log); inner Err = validation message for the page.
     let outcome = if action == "save" {
-        save_all(&state, &lang, &form).await
+        save_all(&state, &lang, &form).await?
     } else if let Some(name) = action.strip_prefix("delete:") {
-        delete_one(&state, &lang, name).await
+        delete_one(&state, &lang, name).await?
     } else if action == "add" {
-        add_one(&state, &lang, &form).await
+        add_one(&state, &lang, &form).await?
     } else {
         Err(tr(&lang, "Unknown action."))
     };
@@ -477,34 +500,42 @@ async fn admin_submit(
 struct SaveRow {
     old: String,
     new: String,
-    password: Option<String>,
-    fields: BTreeMap<String, toml::Value>,
+    password_hash: Option<String>,
+    /// None = the submitted fields match the row's current effective fields (no-op, skip the write).
+    fields: Option<BTreeMap<String, toml::Value>>,
 }
 
 /// Batch-apply the whole user table: per-user `username[old]` (rename), `password[old]` (blank =
 /// keep), and `f_<field>[old]`. The batch is validated as a whole first (valid + unique usernames,
-/// password length) so one bad row rejects the save rather than applying partially.
+/// password length) so one bad row rejects the save rather than applying partially. Unchanged
+/// rows are skipped so saving an untouched table writes nothing.
 async fn save_all(
     state: &AppState,
     lang: &str,
     form: &HashMap<String, String>,
-) -> Result<String, String> {
-    let names: Vec<String> = { state.db.read().await.users.keys().cloned().collect() };
-    let current: HashSet<String> = names.iter().cloned().collect();
+) -> Result<Result<String, String>, AppError> {
+    let rows: Vec<(String, BTreeMap<String, toml::Value>)> = {
+        let db = state.db.read().await;
+        db.users
+            .iter()
+            .map(|(name, u)| (name.clone(), u.fields.clone()))
+            .collect()
+    };
+    let current: HashSet<String> = rows.iter().map(|(name, _)| name.clone()).collect();
 
     let mut plan = Vec::new();
     let mut final_names = HashSet::new();
-    for old in &names {
+    for (old, current_fields) in &rows {
         let new = form
             .get(&format!("username[{old}]"))
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|| old.clone());
         if !UserDb::valid_username(&new) {
-            return Err(tr(lang, "Invalid username."));
+            return Ok(Err(tr(lang, "Invalid username.")));
         }
         // Reject renaming onto any other current name (avoids swaps/chains) or a batch duplicate.
         if (&new != old && current.contains(&new)) || !final_names.insert(new.clone()) {
-            return Err(tr(lang, "Username already exists."));
+            return Ok(Err(tr(lang, "Username already exists.")));
         }
         let password = form
             .get(&format!("password[{old}]"))
@@ -513,43 +544,45 @@ async fn save_all(
         if let Some(p) = &password
             && p.len() < state.cfg.min_password_len
         {
-            return Err(tr(lang, "Password is too short."));
+            return Ok(Err(tr(lang, "Password is too short.")));
         }
-        let fields = collect_row_fields(&state.cfg, form, old);
+        // Hash here, before the write lock is taken — bcrypt is too slow to run under it.
+        let password_hash = match password {
+            Some(p) => Some(authn::hash_password_blocking(p).await?),
+            None => None,
+        };
+        let fields = collect_fields(&state.cfg, form, |n| format!("f_{n}[{old}]"), |_| true);
         plan.push(SaveRow {
             old: old.clone(),
             new,
-            password,
-            fields,
+            password_hash,
+            fields: (&fields != current_fields).then_some(fields),
         });
     }
 
     let mut db = state.db.write().await;
     for row in plan {
         // Apply to the current (old) name, then rename — so the rename carries the fresh data.
-        db.write_fields(&row.old, &row.fields)
-            .map_err(|e| e.to_string())?;
-        if let Some(p) = row.password {
-            let hash = crate::authn::hash_password(&p).map_err(|e| e.to_string())?;
-            db.write_password(&row.old, &hash)
-                .map_err(|e| e.to_string())?;
+        if let Some(fields) = &row.fields {
+            db.write_fields(&row.old, fields)?;
+        }
+        if let Some(hash) = row.password_hash {
+            db.write_password(&row.old, &hash)?;
         }
         if row.new != row.old {
-            db.rename_user(&row.old, &row.new)
-                .map_err(|e| e.to_string())?;
+            db.rename_user(&row.old, &row.new)?;
         }
     }
-    Ok(tr(lang, "Saved."))
+    Ok(Ok(tr(lang, "Saved.")))
 }
 
-async fn delete_one(state: &AppState, lang: &str, user: &str) -> Result<String, String> {
-    state
-        .db
-        .write()
-        .await
-        .delete_user(user)
-        .map_err(|e| e.to_string())?;
-    Ok(tr(lang, "User deleted."))
+async fn delete_one(
+    state: &AppState,
+    lang: &str,
+    user: &str,
+) -> Result<Result<String, String>, AppError> {
+    state.db.write().await.delete_user(user)?;
+    Ok(Ok(tr(lang, "User deleted.")))
 }
 
 /// The separate add-user form: `username` + `new_password`. Fields are left to their config
@@ -558,10 +591,10 @@ async fn add_one(
     state: &AppState,
     lang: &str,
     form: &HashMap<String, String>,
-) -> Result<String, String> {
+) -> Result<Result<String, String>, AppError> {
     let username = form.get("username").map(String::as_str).unwrap_or("");
     if !UserDb::valid_username(username) {
-        return Err(tr(lang, "Invalid username."));
+        return Ok(Err(tr(lang, "Invalid username.")));
     }
     if state
         .db
@@ -571,40 +604,17 @@ async fn add_one(
         .get(username)
         .is_some_and(|u| u.hash.is_some())
     {
-        return Err(tr(lang, "User already exists."));
+        return Ok(Err(tr(lang, "User already exists.")));
     }
     let Some(pw) = form.get("new_password").filter(|s| !s.is_empty()) else {
-        return Err(tr(lang, "A password is required to add a user."));
+        return Ok(Err(tr(lang, "A password is required to add a user.")));
     };
     if pw.len() < state.cfg.min_password_len {
-        return Err(tr(lang, "Password is too short."));
+        return Ok(Err(tr(lang, "Password is too short.")));
     }
-    let hash = crate::authn::hash_password(pw).map_err(|e| e.to_string())?;
-    state
-        .db
-        .write()
-        .await
-        .write_password(username, &hash)
-        .map_err(|e| e.to_string())?;
-    Ok(tr(lang, "User added."))
-}
-
-/// Read `f_<field>[<old>]` values for every schema field (admin edits all). Bools: present = true.
-fn collect_row_fields(
-    cfg: &Config,
-    form: &HashMap<String, String>,
-    old: &str,
-) -> BTreeMap<String, toml::Value> {
-    let mut out = BTreeMap::new();
-    for (name, spec) in &cfg.fields {
-        let key = format!("f_{name}[{old}]");
-        let value = match spec.type_ {
-            FieldType::Bool => toml::Value::Boolean(form.contains_key(&key)),
-            _ => toml::Value::String(form.get(&key).cloned().unwrap_or_default()),
-        };
-        out.insert(name.clone(), value);
-    }
-    out
+    let hash = authn::hash_password_blocking(pw.clone()).await?;
+    state.db.write().await.write_password(username, &hash)?;
+    Ok(Ok(tr(lang, "User added.")))
 }
 
 // ---- View building ----
@@ -653,7 +663,7 @@ fn render_login(
 
 fn make_field_view(
     name: &str,
-    spec: &crate::config::FieldSpec,
+    spec: &FieldSpec,
     value: Option<&toml::Value>,
     editable: bool,
 ) -> FieldView {
@@ -687,37 +697,37 @@ fn admin_field_views(cfg: &Config, values: &BTreeMap<String, toml::Value>) -> Ve
 /// /account view: only fields visible to this user (user_visible, or editable-for-them).
 /// Editability is the per-user `user_editable_expr` (fail closed on eval error).
 fn account_field_views(state: &AppState, user: &User, username: &str) -> Vec<FieldView> {
+    let ctx = cel::context(&user.fields, username).ok();
     state
         .cfg
         .fields
         .iter()
         .filter_map(|(name, spec)| {
-            let editable = field_editable(state, name, user, username);
+            let editable = ctx
+                .as_ref()
+                .is_some_and(|ctx| field_editable(state, name, ctx));
             (spec.user_visible || editable)
                 .then(|| make_field_view(name, spec, user.fields.get(name), editable))
         })
         .collect()
 }
 
-/// May `username` edit `field` right now? Evaluates the field's user_editable_expr; any miss or
-/// eval error is treated as not-editable (fail closed).
-fn field_editable(state: &AppState, field: &str, user: &User, username: &str) -> bool {
+/// May the user behind `ctx` edit `field` right now? Evaluates the field's user_editable_expr;
+/// any miss or eval error is treated as not-editable (fail closed).
+fn field_editable(state: &AppState, field: &str, ctx: &cel::Context) -> bool {
     state
         .compiled
         .field_editable
         .get(field)
-        .is_some_and(|expr| {
-            matches!(
-                cel::eval(expr, user, username),
-                Ok(toml::Value::Boolean(true))
-            )
-        })
+        .is_some_and(|expr| cel::eval_bool(expr, ctx))
 }
 
-/// Read submitted `f_<name>` values for the given schema fields. Bools: present = true.
+/// Read submitted values for the schema fields passing `accept`; `key` maps a field name to its
+/// form key (`f_<name>` on /account, `f_<name>[<row>]` in the admin table). Bools: present = true.
 fn collect_fields(
     cfg: &Config,
     form: &HashMap<String, String>,
+    key: impl Fn(&str) -> String,
     accept: impl Fn(&str) -> bool,
 ) -> BTreeMap<String, toml::Value> {
     let mut out = BTreeMap::new();
@@ -725,7 +735,7 @@ fn collect_fields(
         if !accept(name) {
             continue;
         }
-        let key = format!("f_{name}");
+        let key = key(name);
         let value = match spec.type_ {
             FieldType::Bool => toml::Value::Boolean(form.contains_key(&key)),
             _ => toml::Value::String(form.get(&key).cloned().unwrap_or_default()),
@@ -746,11 +756,14 @@ fn auth_response_headers(
         HeaderName::from_static("x-remote-user-id"),
         HeaderValue::from_str(username)?,
     );
+    if state.compiled.headers.is_empty() {
+        return Ok(out); // skip the context build on the hot path when no headers are configured
+    }
+    let ctx = cel::context(&user.fields, username)?;
     for (name, expr) in &state.compiled.headers {
-        let value = match cel::eval(expr, user, username)? {
-            toml::Value::Boolean(b) => b.to_string(),
-            toml::Value::String(s) => s,
-            other => other.to_string(),
+        let value = match cel::eval(expr, &ctx)? {
+            CelValue::Bool(b) => b.to_string(),
+            CelValue::Str(s) => s,
         };
         out.insert(name.clone(), HeaderValue::from_str(&value)?);
     }
@@ -764,11 +777,11 @@ fn eval_jwt_claims(
 ) -> Result<serde_json::Map<String, serde_json::Value>, AppError> {
     let mut map = serde_json::Map::new();
     let Some(user) = user else { return Ok(map) };
+    let ctx = cel::context(&user.fields, username)?;
     for (name, expr) in &state.compiled.jwt_claims {
-        let value = match cel::eval(expr, user, username)? {
-            toml::Value::Boolean(b) => serde_json::Value::Bool(b),
-            toml::Value::String(s) => serde_json::Value::String(s),
-            other => serde_json::Value::String(other.to_string()),
+        let value = match cel::eval(expr, &ctx)? {
+            CelValue::Bool(b) => serde_json::Value::Bool(b),
+            CelValue::Str(s) => serde_json::Value::String(s),
         };
         map.insert(name.clone(), value);
     }
@@ -777,10 +790,9 @@ fn eval_jwt_claims(
 
 fn is_superadmin(state: &AppState, user: Option<&User>, username: &str) -> bool {
     let Some(user) = user else { return false };
-    matches!(
-        cel::eval(&state.compiled.superadmin, user, username),
-        Ok(toml::Value::Boolean(true))
-    )
+    cel::context(&user.fields, username)
+        .map(|ctx| cel::eval_bool(&state.compiled.superadmin, &ctx))
+        .unwrap_or(false)
 }
 
 // ---- Request helpers ----
@@ -797,13 +809,14 @@ async fn ensure_fresh(state: &AppState) -> Result<(), AppError> {
 
 fn current_claims(headers: &HeaderMap, state: &AppState) -> Option<Claims> {
     let token = cookie_value(headers, session::COOKIE_NAME)?;
-    session::verify(&token, &state.secret, state.cfg.session_max_days)
+    session::verify(&token, &state.keys, state.cfg.session_max_days)
 }
 
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
+    let prefix = format!("{name}=");
     raw.split(';')
-        .find_map(|part| part.trim().strip_prefix(&format!("{name}=")))
+        .find_map(|part| part.trim().strip_prefix(&prefix))
         .map(str::to_string)
 }
 
@@ -854,9 +867,14 @@ fn redirect_to_login(state: &AppState, rd: &str) -> Response {
     Redirect::to(&format!("{}/login?rd={}", state.cfg.base_path, rd)).into_response()
 }
 
+/// Session cookie header; an empty token clears the cookie (Max-Age=0).
 fn cookie_header(token: &str, cfg: &Config) -> Result<HeaderValue, AppError> {
     let secure = if cfg.insecure_cookies { "" } else { "; Secure" };
-    let max_age = cfg.session_idle_hours as u64 * 3600;
+    let max_age = if token.is_empty() {
+        0
+    } else {
+        cfg.session_idle_hours as u64 * 3600
+    };
     let s = format!(
         "{}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}{secure}",
         session::COOKIE_NAME
@@ -864,21 +882,8 @@ fn cookie_header(token: &str, cfg: &Config) -> Result<HeaderValue, AppError> {
     Ok(HeaderValue::from_str(&s)?)
 }
 
-fn clear_cookie_header(cfg: &Config) -> Result<HeaderValue, AppError> {
-    let secure = if cfg.insecure_cookies { "" } else { "; Secure" };
-    let s = format!(
-        "{}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{secure}",
-        session::COOKIE_NAME
-    );
-    Ok(HeaderValue::from_str(&s)?)
-}
-
 fn render<T: askama::Template>(t: T) -> Handler {
     Ok(Html(t.render()?).into_response())
-}
-
-fn tr(lang: &str, msgid: &str) -> String {
-    crate::i18n::tr(lang, msgid)
 }
 
 /// Negotiate the request locale from Accept-Language against the compiled catalogs (else "en").

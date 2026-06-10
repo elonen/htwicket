@@ -66,6 +66,16 @@ pub enum FieldType {
     Email,
 }
 
+impl FieldType {
+    /// Does `v` carry this type? (bool for Bool, string for String/Email.)
+    pub fn matches(self, v: &toml::Value) -> bool {
+        match self {
+            FieldType::Bool => v.is_bool(),
+            FieldType::String | FieldType::Email => v.is_str(),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FieldSpec {
@@ -171,17 +181,13 @@ fn validate(cfg: &Config) -> anyhow::Result<()> {
         if spec.type_ == FieldType::Bool && spec.required {
             anyhow::bail!("field `{name}`: `required` applies only to non-bool fields");
         }
-        if let Some(default) = &spec.default {
-            let ok = match spec.type_ {
-                FieldType::Bool => default.is_bool(),
-                FieldType::String | FieldType::Email => default.is_str(),
-            };
-            if !ok {
-                anyhow::bail!(
-                    "field `{name}`: default does not match type {:?}",
-                    spec.type_
-                );
-            }
+        if let Some(default) = &spec.default
+            && !spec.type_.matches(default)
+        {
+            anyhow::bail!(
+                "field `{name}`: default does not match type {:?}",
+                spec.type_
+            );
         }
     }
     Ok(())

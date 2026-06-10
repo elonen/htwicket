@@ -180,3 +180,10 @@ msgstr "Vous êtes connecté en tant que"
 #: templates/logout.html:10
 msgid "Cancel"
 msgstr "Annuler"
+#: src/web/mod.rs:243
+msgid "Too many attempts from your network. Wait a minute and retry."
+msgstr "Trop de tentatives depuis votre réseau. Attendez une minute et réessayez."
+
+#: src/web/mod.rs:247
+msgid "Too many failed attempts. Try again shortly."
+msgstr "Trop de tentatives échouées. Réessayez dans un instant."

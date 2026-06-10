@@ -30,6 +30,18 @@ pub fn hash_password(password: &str) -> anyhow::Result<String> {
     Ok(bcrypt::hash(password, bcrypt::DEFAULT_COST)?)
 }
 
+/// bcrypt is ~100ms of pure CPU — async handlers must use these `spawn_blocking` wrappers so a
+/// verify/hash can't stall the tokio worker threads (the sync versions stay for CLI + tests).
+pub async fn verify_password_blocking(password: String, hash: String) -> bool {
+    tokio::task::spawn_blocking(move || verify_password(&password, &hash))
+        .await
+        .unwrap_or(false)
+}
+
+pub async fn hash_password_blocking(password: String) -> anyhow::Result<String> {
+    tokio::task::spawn_blocking(move || hash_password(&password)).await?
+}
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -46,7 +58,7 @@ const IP_MAX_PER_WINDOW: u32 = 30;
 /// bcrypt per request is unaffordable; only active with basic_auth_passthrough. Cleared on file reload.
 #[derive(Default)]
 pub struct VerifyCache {
-    entries: Mutex<HashMap<String, Instant>>, // key -> expiry
+    entries: Mutex<HashMap<[u8; 32], Instant>>, // digest -> expiry
 }
 
 impl VerifyCache {
@@ -54,12 +66,12 @@ impl VerifyCache {
         Self::default()
     }
 
-    fn key(user: &str, pass: &str) -> String {
+    fn key(user: &str, pass: &str) -> [u8; 32] {
         let mut h = Sha256::new();
         h.update(user.as_bytes());
         h.update(b":");
         h.update(pass.as_bytes());
-        h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+        h.finalize().into()
     }
 
     /// True if this exact (user, pass) verified successfully within the TTL.
@@ -91,12 +103,28 @@ impl VerifyCache {
 struct UserFails {
     failures: u32,
     locked_until: Option<Instant>,
+    last_failure: Instant,
 }
 
 struct IpWindow {
     start: Instant,
     count: u32,
 }
+
+/// Why an attempt was refused. The web layer maps these to translated user-facing text.
+#[derive(Clone, Copy, Debug)]
+pub enum Throttle {
+    /// Per-IP request cap hit.
+    Ip,
+    /// Per-username lockout in force.
+    User,
+}
+
+/// Sweep threshold: both maps are attacker-growable (sprayed usernames, spoofed X-Forwarded-For),
+/// so once one passes this size, `check` drops entries whose window/lockout has lapsed.
+const SWEEP_AT: usize = 1024;
+/// A failure streak with no lockout in force is forgotten after this long.
+const FAILS_STALE: Duration = Duration::from_secs(3600);
 
 /// In-memory login throttle: per-username exponential backoff after 5 failures (2^n s, cap 5 min)
 /// plus a coarse per-IP cap (30/min). Client IP = last X-Forwarded-For entry (peer is nginx).
@@ -112,12 +140,15 @@ impl RateLimiter {
         Self::default()
     }
 
-    /// Call before verifying a login. Err(reason) means the attempt is refused (locked/throttled);
-    /// the reason is a user-facing message. Consumes one per-IP token on success.
-    pub fn check(&self, username: &str, ip: &str) -> Result<(), String> {
+    /// Call before verifying a login. Err means the attempt is refused (locked/throttled).
+    /// Consumes one per-IP token on success.
+    pub fn check(&self, username: &str, ip: &str) -> Result<(), Throttle> {
         let now = Instant::now();
         {
             let mut ips = self.ips.lock().unwrap();
+            if ips.len() >= SWEEP_AT {
+                ips.retain(|_, w| now.duration_since(w.start) <= IP_WINDOW);
+            }
             let w = ips.entry(ip.to_string()).or_insert(IpWindow {
                 start: now,
                 count: 0,
@@ -129,15 +160,21 @@ impl RateLimiter {
                 };
             }
             if w.count >= IP_MAX_PER_WINDOW {
-                return Err("Too many attempts from your network. Wait a minute and retry.".into());
+                return Err(Throttle::Ip);
             }
             w.count += 1;
         }
-        let users = self.users.lock().unwrap();
+        let mut users = self.users.lock().unwrap();
+        if users.len() >= SWEEP_AT {
+            users.retain(|_, st| {
+                st.locked_until.is_some_and(|until| until > now)
+                    || now.duration_since(st.last_failure) < FAILS_STALE
+            });
+        }
         if let Some(st) = users.get(username)
             && st.locked_until.is_some_and(|until| until > now)
         {
-            return Err("Too many failed attempts. Try again shortly.".into());
+            return Err(Throttle::User);
         }
         Ok(())
     }
@@ -147,8 +184,10 @@ impl RateLimiter {
         let st = users.entry(username.to_string()).or_insert(UserFails {
             failures: 0,
             locked_until: None,
+            last_failure: Instant::now(),
         });
         st.failures += 1;
+        st.last_failure = Instant::now();
         if st.failures >= FAILS_BEFORE_LOCK {
             let exp = (st.failures - FAILS_BEFORE_LOCK).min(9); // avoid shift overflow
             let secs = (1u64 << exp).min(LOCK_CAP_SECS);

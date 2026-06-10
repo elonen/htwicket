@@ -13,6 +13,27 @@ use serde::{Deserialize, Serialize};
 pub const COOKIE_NAME: &str = "htwicket_session";
 const ISSUER: &str = "htwicket";
 
+/// HS256 keys + validation derived from the secret once at startup — building
+/// EncodingKey/DecodingKey/Validation per request is pure constant work.
+pub struct Keys {
+    enc: EncodingKey,
+    dec: DecodingKey,
+    validation: Validation,
+}
+
+impl Keys {
+    pub fn new(secret: &[u8]) -> Self {
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.set_issuer(&[ISSUER]);
+        validation.validate_aud = false; // htwicket tokens carry no audience
+        Keys {
+            enc: EncodingKey::from_secret(secret),
+            dec: DecodingKey::from_secret(secret),
+            validation,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: String,
@@ -67,22 +88,14 @@ pub fn remint(prev: &Claims, now: u64, session_idle_hours: u32) -> Claims {
     }
 }
 
-pub fn mint(claims: &Claims, secret: &[u8]) -> anyhow::Result<String> {
-    let token = encode(
-        &Header::new(Algorithm::HS256),
-        claims,
-        &EncodingKey::from_secret(secret),
-    )?;
-    Ok(token)
+pub fn mint(claims: &Claims, keys: &Keys) -> anyhow::Result<String> {
+    Ok(encode(&Header::new(Algorithm::HS256), claims, &keys.enc)?)
 }
 
 /// Validate signature + exp + iss, pinning HS256 (token-header alg cannot downgrade us), then
 /// enforce the absolute cap: orig_iat + session_max_days. Any failure => None (no session).
-pub fn verify(token: &str, secret: &[u8], session_max_days: u32) -> Option<Claims> {
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.set_issuer(&[ISSUER]);
-    validation.validate_aud = false; // htwicket tokens carry no audience
-    let data = decode::<Claims>(token, &DecodingKey::from_secret(secret), &validation).ok()?;
+pub fn verify(token: &str, keys: &Keys, session_max_days: u32) -> Option<Claims> {
+    let data = decode::<Claims>(token, &keys.dec, &keys.validation).ok()?;
     let claims = data.claims;
     if claims.orig_iat + session_max_days as u64 * 86400 < now() {
         return None;
@@ -128,6 +141,10 @@ mod tests {
 
     const SECRET: &[u8] = b"test-secret-key";
 
+    fn keys() -> Keys {
+        Keys::new(SECRET)
+    }
+
     fn claims(now: u64) -> Claims {
         new_session(
             "alice",
@@ -142,8 +159,8 @@ mod tests {
     #[test]
     fn mint_verify_roundtrip() {
         let c = claims(now());
-        let token = mint(&c, SECRET).unwrap();
-        let got = verify(&token, SECRET, 7).unwrap();
+        let token = mint(&c, &keys()).unwrap();
+        let got = verify(&token, &keys(), 7).unwrap();
         assert_eq!(got.sub, "alice");
         assert_eq!(got.orig_iat, c.orig_iat);
         assert_eq!(got.pwd_fp.as_deref(), Some("deadbeefdeadbeef"));
@@ -151,8 +168,8 @@ mod tests {
 
     #[test]
     fn wrong_secret_rejected() {
-        let token = mint(&claims(now()), SECRET).unwrap();
-        assert!(verify(&token, b"other-secret", 7).is_none());
+        let token = mint(&claims(now()), &keys()).unwrap();
+        assert!(verify(&token, &Keys::new(b"other-secret"), 7).is_none());
     }
 
     #[test]
@@ -160,25 +177,25 @@ mod tests {
         let mut c = claims(now());
         c.iat = now() - 7200;
         c.exp = now() - 3600; // well past the 60s default leeway
-        let token = mint(&c, SECRET).unwrap();
-        assert!(verify(&token, SECRET, 7).is_none());
+        let token = mint(&c, &keys()).unwrap();
+        assert!(verify(&token, &keys(), 7).is_none());
     }
 
     #[test]
     fn absolute_cap_rejects_old_origin() {
         let mut c = claims(now());
         c.orig_iat = now() - 100 * 86400; // 100 days ago, but exp still fresh
-        let token = mint(&c, SECRET).unwrap();
-        assert!(verify(&token, SECRET, 7).is_none());
-        assert!(verify(&token, SECRET, 365).is_some());
+        let token = mint(&c, &keys()).unwrap();
+        assert!(verify(&token, &keys(), 7).is_none());
+        assert!(verify(&token, &keys(), 365).is_some());
     }
 
     #[test]
     fn wrong_issuer_rejected() {
         let mut c = claims(now());
         c.iss = "evil".into();
-        let token = mint(&c, SECRET).unwrap();
-        assert!(verify(&token, SECRET, 7).is_none());
+        let token = mint(&c, &keys()).unwrap();
+        assert!(verify(&token, &keys(), 7).is_none());
     }
 
     #[test]
@@ -190,7 +207,7 @@ mod tests {
             &EncodingKey::from_secret(SECRET),
         )
         .unwrap();
-        assert!(verify(&token, SECRET, 7).is_none());
+        assert!(verify(&token, &keys(), 7).is_none());
     }
 
     #[test]

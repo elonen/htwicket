@@ -179,3 +179,11 @@ msgstr "Olet kirjautuneena sisään nimellä"
 #: templates/logout.html:10
 msgid "Cancel"
 msgstr "Peruuta"
+
+#: src/web/mod.rs:243
+msgid "Too many attempts from your network. Wait a minute and retry."
+msgstr "Liian monta yritystä verkostasi. Odota hetki ja yritä uudelleen."
+
+#: src/web/mod.rs:247
+msgid "Too many failed attempts. Try again shortly."
+msgstr "Liian monta epäonnistunutta yritystä. Yritä hetken kuluttua uudelleen."

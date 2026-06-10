@@ -91,9 +91,7 @@ impl UserDb {
 
     fn reload(&mut self) -> anyhow::Result<()> {
         let htpasswd_text = read_opt(&self.htpasswd_path)?.unwrap_or_default();
-        let sidecar_text = read_opt(&self.sidecar_path)?.unwrap_or_default();
-        let sidecar: Sidecar = toml::from_str(&sidecar_text)
-            .with_context(|| format!("parsing sidecar {}", self.sidecar_path.display()))?;
+        let sidecar = read_sidecar(&self.sidecar_path)?;
 
         self.users = build_users(&self.cfg, &htpasswd_text, &sidecar);
         self.sidecar = sidecar;
@@ -120,22 +118,15 @@ impl UserDb {
         effective_fields(&self.cfg, raw.unwrap_or(&toml::Table::new())).1
     }
 
+    /// Every write method mutates the file(s) under the lock and then re-derives all in-memory
+    /// state via `reload()` — memory always equals disk, never a hand-patched approximation.
     pub fn write_password(&mut self, user: &str, bcrypt_hash: &str) -> anyhow::Result<()> {
         let mut lock = self.open_lock()?;
         let _guard = lock.write()?;
         let mut entries = parse_htpasswd(&read_opt(&self.htpasswd_path)?.unwrap_or_default());
         entries.insert(user.to_string(), bcrypt_hash.to_string());
         atomic_write(&self.htpasswd_path, &serialize_htpasswd(&entries))?;
-        self.htpasswd_mtime = mtime(&self.htpasswd_path);
-
-        let u = self.users.entry(user.to_string()).or_insert_with(|| User {
-            hash: None,
-            pwd_fp: None,
-            fields: effective_fields(&self.cfg, &toml::Table::new()).0,
-        });
-        u.hash = Some(bcrypt_hash.to_string());
-        u.pwd_fp = Some(pwd_fp(bcrypt_hash));
-        Ok(())
+        self.reload()
     }
 
     /// Merge `fields` into the user's sidecar table, preserving any unknown fields already there.
@@ -152,19 +143,7 @@ impl UserDb {
             table.insert(k.clone(), v.clone());
         }
         atomic_write(&self.sidecar_path, &toml::to_string_pretty(&sidecar)?)?;
-        self.sidecar_mtime = mtime(&self.sidecar_path);
-
-        let effective = effective_fields(&self.cfg, &sidecar.users[user]).0;
-        self.sidecar = sidecar;
-        self.users
-            .entry(user.to_string())
-            .or_insert_with(|| User {
-                hash: None,
-                pwd_fp: None,
-                fields: BTreeMap::new(),
-            })
-            .fields = effective;
-        Ok(())
+        self.reload()
     }
 
     /// Remove the user from both files under one lock.
@@ -174,16 +153,12 @@ impl UserDb {
         let mut entries = parse_htpasswd(&read_opt(&self.htpasswd_path)?.unwrap_or_default());
         if entries.remove(user).is_some() {
             atomic_write(&self.htpasswd_path, &serialize_htpasswd(&entries))?;
-            self.htpasswd_mtime = mtime(&self.htpasswd_path);
         }
         let mut sidecar = read_sidecar(&self.sidecar_path)?;
         if sidecar.users.remove(user).is_some() {
             atomic_write(&self.sidecar_path, &toml::to_string_pretty(&sidecar)?)?;
-            self.sidecar_mtime = mtime(&self.sidecar_path);
         }
-        self.sidecar = sidecar;
-        self.users.remove(user);
-        Ok(())
+        self.reload()
     }
 
     /// Rename a user in both files (and memory) under one lock, preserving password + all fields.
@@ -199,19 +174,13 @@ impl UserDb {
         if let Some(hash) = entries.remove(old) {
             entries.insert(new.to_string(), hash);
             atomic_write(&self.htpasswd_path, &serialize_htpasswd(&entries))?;
-            self.htpasswd_mtime = mtime(&self.htpasswd_path);
         }
         let mut sidecar = read_sidecar(&self.sidecar_path)?;
         if let Some(table) = sidecar.users.remove(old) {
             sidecar.users.insert(new.to_string(), table);
             atomic_write(&self.sidecar_path, &toml::to_string_pretty(&sidecar)?)?;
-            self.sidecar_mtime = mtime(&self.sidecar_path);
         }
-        self.sidecar = sidecar;
-        if let Some(user) = self.users.remove(old) {
-            self.users.insert(new.to_string(), user);
-        }
-        Ok(())
+        self.reload()
     }
 
     /// Open (creating if needed) the shared lock file. Caller takes `.write()` for the duration
@@ -266,7 +235,7 @@ fn effective_fields(
     let mut errors = Vec::new();
     for (name, spec) in &cfg.fields {
         let value = match raw.get(name) {
-            Some(v) if type_ok(spec.type_, v) => v.clone(),
+            Some(v) if spec.type_.matches(v) => v.clone(),
             Some(_) => {
                 errors.push(format!("field `{name}` is not a {:?}", spec.type_));
                 fallback(spec.type_, spec.default.as_ref())
@@ -291,13 +260,6 @@ fn fallback(t: FieldType, default: Option<&toml::Value>) -> toml::Value {
     match t {
         FieldType::Bool => toml::Value::Boolean(false),
         FieldType::String | FieldType::Email => toml::Value::String(String::new()),
-    }
-}
-
-fn type_ok(t: FieldType, v: &toml::Value) -> bool {
-    match t {
-        FieldType::Bool => v.is_bool(),
-        FieldType::String | FieldType::Email => v.is_str(),
     }
 }
 

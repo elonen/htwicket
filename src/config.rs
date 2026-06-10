@@ -58,7 +58,7 @@ pub struct Superadmins {
     pub expr: String,
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[derive(Deserialize, Clone, Copy, PartialEq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum FieldType {
     Bool,

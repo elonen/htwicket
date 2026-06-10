@@ -11,6 +11,7 @@ htpasswd_file = "/var/www/.htpasswd"
 insecure_cookies = false        # true only behind plain http (demo); drops Secure flag
 basic_auth_passthrough = false  # true = accept Authorization: Basic on /auth (legacy scripts)
 # upgrade_hash_on_login = false # rehash DES/apr1 entries to bcrypt at successful login
+
 min_password_len = 8
 session_hours = 12              # sliding re-mint past half-life
 session_max_days = 7            # absolute session cap

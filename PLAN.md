@@ -54,7 +54,7 @@ session_hours = 12                 # JWT exp; sliding re-mint past half-life
 session_max_days = 7               # absolute cap via orig_iat
 
 [superadmins]                      # admins of htwicket itself (GUI /admin access)
-expr = "username == 'admin' || fields.is_admin"   # CEL; OR'd over nothing else — this is the whole gate
+expr = "username == 'admin' || fields.is_admin"   # User is superadmin if this CEL expr evaluates true
 
 [fields.is_admin]                  # example app schema (core knows none of it)
 type = "bool"                      # bool | string | email

@@ -1,0 +1,182 @@
+# French translations for htwicket package.
+# Copyright (C) 2026 htwicket authors
+# This file is distributed under the same license as the htwicket package.
+# Automatically generated, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: htwicket\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-10 21:22+0300\n"
+"PO-Revision-Date: 2026-06-10 21:22+0300\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#: src/web/mod.rs:240
+msgid "Invalid username or password."
+msgstr "Nom d'utilisateur ou mot de passe incorrect."
+
+#: src/web/mod.rs:361
+msgid "Current password is incorrect."
+msgstr "Le mot de passe actuel est incorrect."
+
+#: src/web/mod.rs:363
+msgid "New password is too short."
+msgstr "Le nouveau mot de passe est trop court."
+
+#: src/web/mod.rs:367
+msgid "Password changed."
+msgstr "Mot de passe modifié."
+
+#: src/web/mod.rs:392 src/web/mod.rs:530
+msgid "Saved."
+msgstr "Enregistré."
+
+#: src/web/mod.rs:457
+msgid "Unknown action."
+msgstr "Action inconnue."
+
+#: src/web/mod.rs:491 src/web/mod.rs:552
+msgid "Invalid username."
+msgstr "Nom d'utilisateur invalide."
+
+#: src/web/mod.rs:495
+msgid "Username already exists."
+msgstr "Ce nom d'utilisateur existe déjà."
+
+#: src/web/mod.rs:504 src/web/mod.rs:568
+msgid "Password is too short."
+msgstr "Le mot de passe est trop court."
+
+#: src/web/mod.rs:540
+msgid "User deleted."
+msgstr "Utilisateur supprimé."
+
+#: src/web/mod.rs:562
+msgid "User already exists."
+msgstr "Cet utilisateur existe déjà."
+
+#: src/web/mod.rs:565
+msgid "A password is required to add a user."
+msgstr "Un mot de passe est requis pour ajouter un utilisateur."
+
+#: src/web/mod.rs:577
+msgid "User added."
+msgstr "Utilisateur ajouté."
+
+#: templates/account.html:2 templates/account.html:5
+msgid "My account"
+msgstr "Mon compte"
+
+#: templates/account.html:24 templates/account.html:27
+msgid "read-only"
+msgstr "lecture seule"
+
+#: templates/account.html:24
+msgid "set by an admin"
+msgstr "défini par un administrateur"
+
+#: templates/account.html:36
+msgid "Change password"
+msgstr "Changer le mot de passe"
+
+#: templates/account.html:37
+msgid "Current password"
+msgstr "Mot de passe actuel"
+
+#: templates/account.html:40
+msgid "New password"
+msgstr "Nouveau mot de passe"
+
+#: templates/account.html:42
+msgid ""
+"Leave blank to keep your current password. Changing it signs you out of all "
+"sessions."
+msgstr "Laissez vide pour conserver votre mot de passe actuel. Le modifier vous déconnecte de toutes les sessions."
+
+#: templates/account.html:46
+msgid "Save"
+msgstr "Enregistrer"
+
+#: templates/admin.html:2 templates/admin.html:7
+msgid "User management"
+msgstr "Gestion des utilisateurs"
+
+#: templates/admin.html:8
+msgid "Rename, set a password, or edit profile fields, then save."
+msgstr "Renommez, définissez un mot de passe ou modifiez les champs de profil, puis enregistrez."
+
+#: templates/admin.html:10
+msgid "users"
+msgstr "utilisateurs"
+
+#: templates/admin.html:25
+msgid "No users yet"
+msgstr "Aucun utilisateur pour le moment"
+
+#: templates/admin.html:26
+msgid "Add the first account below."
+msgstr "Ajoutez le premier compte ci-dessous."
+
+#: templates/admin.html:35 templates/admin.html:79 templates/login.html:16
+msgid "Username"
+msgstr "Nom d'utilisateur"
+
+#: templates/admin.html:35
+msgid "no password"
+msgstr "pas de mot de passe"
+
+#: templates/admin.html:39
+msgid "Set new password"
+msgstr "Définir un nouveau mot de passe"
+
+#: templates/admin.html:43
+msgid "Delete"
+msgstr "Supprimer"
+
+#: templates/admin.html:50
+msgid "Profile fields"
+msgstr "Champs de profil"
+
+#: templates/admin.html:68
+msgid "Save changes"
+msgstr "Enregistrer les modifications"
+
+#: templates/admin.html:77 templates/admin.html:88
+msgid "Add user"
+msgstr "Ajouter un utilisateur"
+
+#: templates/admin.html:83 templates/login.html:20
+msgid "Password"
+msgstr "Mot de passe"
+
+#: templates/admin.html:87
+msgid "Profile fields use their defaults; edit them above after adding."
+msgstr "Les champs de profil utilisent leurs valeurs par défaut ; modifiez-les ci-dessus après l'ajout."
+
+#: templates/base.html:17
+msgid ""
+"Insecure-cookie mode is enabled. Use only via localhost or an encrypted "
+"tunnel (VPN); otherwise passwords and sessions are exposed."
+msgstr "Le mode cookie non sécurisé est activé. À utiliser uniquement via localhost ou un tunnel chiffré (VPN) ; sinon les mots de passe et les sessions sont exposés."
+
+#: templates/login.html:2 templates/login.html:5 templates/login.html:23
+msgid "Sign in"
+msgstr "Se connecter"
+
+#: templates/logout.html:2 templates/logout.html:5 templates/logout.html:9
+msgid "Sign out"
+msgstr "Se déconnecter"
+
+#: templates/logout.html:6
+msgid "You are signed in as"
+msgstr "Vous êtes connecté en tant que"
+
+#: templates/logout.html:10
+msgid "Cancel"
+msgstr "Annuler"

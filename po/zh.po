@@ -1,0 +1,181 @@
+# Chinese translations for htwicket package.
+# Copyright (C) 2026 htwicket authors
+# This file is distributed under the same license as the htwicket package.
+# Automatically generated, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: htwicket\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-10 21:22+0300\n"
+"PO-Revision-Date: 2026-06-10 21:22+0300\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: zh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/web/mod.rs:240
+msgid "Invalid username or password."
+msgstr "用户名或密码无效。"
+
+#: src/web/mod.rs:361
+msgid "Current password is incorrect."
+msgstr "当前密码不正确。"
+
+#: src/web/mod.rs:363
+msgid "New password is too short."
+msgstr "新密码太短。"
+
+#: src/web/mod.rs:367
+msgid "Password changed."
+msgstr "密码已更改。"
+
+#: src/web/mod.rs:392 src/web/mod.rs:530
+msgid "Saved."
+msgstr "已保存。"
+
+#: src/web/mod.rs:457
+msgid "Unknown action."
+msgstr "未知操作。"
+
+#: src/web/mod.rs:491 src/web/mod.rs:552
+msgid "Invalid username."
+msgstr "用户名无效。"
+
+#: src/web/mod.rs:495
+msgid "Username already exists."
+msgstr "用户名已存在。"
+
+#: src/web/mod.rs:504 src/web/mod.rs:568
+msgid "Password is too short."
+msgstr "密码太短。"
+
+#: src/web/mod.rs:540
+msgid "User deleted."
+msgstr "用户已删除。"
+
+#: src/web/mod.rs:562
+msgid "User already exists."
+msgstr "用户已存在。"
+
+#: src/web/mod.rs:565
+msgid "A password is required to add a user."
+msgstr "添加用户需要设置密码。"
+
+#: src/web/mod.rs:577
+msgid "User added."
+msgstr "用户已添加。"
+
+#: templates/account.html:2 templates/account.html:5
+msgid "My account"
+msgstr "我的账户"
+
+#: templates/account.html:24 templates/account.html:27
+msgid "read-only"
+msgstr "只读"
+
+#: templates/account.html:24
+msgid "set by an admin"
+msgstr "由管理员设置"
+
+#: templates/account.html:36
+msgid "Change password"
+msgstr "更改密码"
+
+#: templates/account.html:37
+msgid "Current password"
+msgstr "当前密码"
+
+#: templates/account.html:40
+msgid "New password"
+msgstr "新密码"
+
+#: templates/account.html:42
+msgid ""
+"Leave blank to keep your current password. Changing it signs you out of all "
+"sessions."
+msgstr "留空以保留当前密码。更改密码将使您退出所有会话。"
+
+#: templates/account.html:46
+msgid "Save"
+msgstr "保存"
+
+#: templates/admin.html:2 templates/admin.html:7
+msgid "User management"
+msgstr "用户管理"
+
+#: templates/admin.html:8
+msgid "Rename, set a password, or edit profile fields, then save."
+msgstr "重命名、设置密码或编辑资料字段，然后保存。"
+
+#: templates/admin.html:10
+msgid "users"
+msgstr "个用户"
+
+#: templates/admin.html:25
+msgid "No users yet"
+msgstr "暂无用户"
+
+#: templates/admin.html:26
+msgid "Add the first account below."
+msgstr "在下方添加第一个账户。"
+
+#: templates/admin.html:35 templates/admin.html:79 templates/login.html:16
+msgid "Username"
+msgstr "用户名"
+
+#: templates/admin.html:35
+msgid "no password"
+msgstr "无密码"
+
+#: templates/admin.html:39
+msgid "Set new password"
+msgstr "设置新密码"
+
+#: templates/admin.html:43
+msgid "Delete"
+msgstr "删除"
+
+#: templates/admin.html:50
+msgid "Profile fields"
+msgstr "资料字段"
+
+#: templates/admin.html:68
+msgid "Save changes"
+msgstr "保存更改"
+
+#: templates/admin.html:77 templates/admin.html:88
+msgid "Add user"
+msgstr "添加用户"
+
+#: templates/admin.html:83 templates/login.html:20
+msgid "Password"
+msgstr "密码"
+
+#: templates/admin.html:87
+msgid "Profile fields use their defaults; edit them above after adding."
+msgstr "资料字段使用默认值；添加后在上方编辑。"
+
+#: templates/base.html:17
+msgid ""
+"Insecure-cookie mode is enabled. Use only via localhost or an encrypted "
+"tunnel (VPN); otherwise passwords and sessions are exposed."
+msgstr "已启用非安全 Cookie 模式。请仅通过 localhost 或加密隧道（VPN）使用；否则密码和会话将被暴露。"
+
+#: templates/login.html:2 templates/login.html:5 templates/login.html:23
+msgid "Sign in"
+msgstr "登录"
+
+#: templates/logout.html:2 templates/logout.html:5 templates/logout.html:9
+msgid "Sign out"
+msgstr "退出登录"
+
+#: templates/logout.html:6
+msgid "You are signed in as"
+msgstr "您已登录为"
+
+#: templates/logout.html:10
+msgid "Cancel"
+msgstr "取消"

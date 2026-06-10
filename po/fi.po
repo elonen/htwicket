@@ -1,0 +1,181 @@
+# Finnish translations for htwicket package.
+# Copyright (C) 2026 htwicket authors
+# This file is distributed under the same license as the htwicket package.
+# Automatically generated, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: htwicket\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-10 21:22+0300\n"
+"PO-Revision-Date: 2026-06-10 21:22+0300\n"
+"Last-Translator: Jarno Elonen\n"
+"Language-Team: none\n"
+"Language: fi\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/web/mod.rs:240
+msgid "Invalid username or password."
+msgstr "Virheellinen käyttäjätunnus tai salasana."
+
+#: src/web/mod.rs:361
+msgid "Current password is incorrect."
+msgstr "Nykyinen salasana on väärin."
+#: src/web/mod.rs:363
+msgid "New password is too short."
+msgstr "Uusi salasana on liian lyhyt."
+
+#: src/web/mod.rs:367
+msgid "Password changed."
+msgstr "Salasana muutettu."
+
+#: src/web/mod.rs:392 src/web/mod.rs:530
+msgid "Saved."
+msgstr "Tallennettu."
+
+#: src/web/mod.rs:457
+msgid "Unknown action."
+msgstr "Tuntematon toiminto."
+
+#: src/web/mod.rs:491 src/web/mod.rs:552
+msgid "Invalid username."
+msgstr "Virheellinen käyttäjätunnus."
+
+#: src/web/mod.rs:495
+msgid "Username already exists."
+msgstr "Käyttäjätunnus on jo olemassa."
+
+#: src/web/mod.rs:504 src/web/mod.rs:568
+msgid "Password is too short."
+msgstr "Salasana on liian lyhyt."
+
+#: src/web/mod.rs:540
+msgid "User deleted."
+msgstr "Käyttäjä poistettu."
+
+#: src/web/mod.rs:562
+msgid "User already exists."
+msgstr "Käyttäjä on jo olemassa."
+
+#: src/web/mod.rs:565
+msgid "A password is required to add a user."
+msgstr "Salasana vaaditaan käyttäjän lisäämiseksi."
+
+#: src/web/mod.rs:577
+msgid "User added."
+msgstr "Käyttäjä lisätty."
+
+#: templates/account.html:2 templates/account.html:5
+msgid "My account"
+msgstr "Oma tunnus"
+
+#: templates/account.html:24 templates/account.html:27
+msgid "read-only"
+msgstr "vain luku"
+
+#: templates/account.html:24
+msgid "set by an admin"
+msgstr "asetettu ylläpitäjän toimesta"
+
+#: templates/account.html:36
+msgid "Change password"
+msgstr "Vaihda salasana"
+
+#: templates/account.html:37
+msgid "Current password"
+msgstr "Nykyinen salasana"
+
+#: templates/account.html:40
+msgid "New password"
+msgstr "Uusi salasana"
+
+#: templates/account.html:42
+msgid ""
+"Leave blank to keep your current password. Changing it signs you out of all "
+"sessions."
+msgstr "Jätä tyhjäksi pitääksesi nykyinen salasana. Vaihtamalla kirjaudut ulos kaikista istunnoista."
+
+#: templates/account.html:46
+msgid "Save"
+msgstr "Tallenna"
+
+#: templates/admin.html:2 templates/admin.html:7
+msgid "User management"
+msgstr "Käyttäjätilien hallinta"
+
+#: templates/admin.html:8
+msgid "Rename, set a password, or edit profile fields, then save."
+msgstr "Nimeä uudelleen, aseta salasana tai muokkaa profiilikenttiä. Lopuksi tallenna."
+
+#: templates/admin.html:10
+msgid "users"
+msgstr "käyttäjät"
+
+#: templates/admin.html:25
+msgid "No users yet"
+msgstr "Ei vielä käyttäjiä"
+
+#: templates/admin.html:26
+msgid "Add the first account below."
+msgstr "Lisää ensimmäinen tili alla."
+
+#: templates/admin.html:35 templates/admin.html:79 templates/login.html:16
+msgid "Username"
+msgstr "Käyttäjätunnus"
+
+#: templates/admin.html:35
+msgid "no password"
+msgstr "ei salasanaa"
+
+#: templates/admin.html:39
+msgid "Set new password"
+msgstr "Aseta uusi salasana"
+
+#: templates/admin.html:43
+msgid "Delete"
+msgstr "Poista"
+
+#: templates/admin.html:50
+msgid "Profile fields"
+msgstr "Profiilikentät"
+
+#: templates/admin.html:68
+msgid "Save changes"
+msgstr "Tallenna muutokset"
+
+#: templates/admin.html:77 templates/admin.html:88
+msgid "Add user"
+msgstr "Lisää käyttäjä"
+
+#: templates/admin.html:83 templates/login.html:20
+msgid "Password"
+msgstr "Salasana"
+
+#: templates/admin.html:87
+msgid "Profile fields use their defaults; edit them above after adding."
+msgstr "Profiilikentät käyttävät oletusarvoja; muokkaa niitä yllä lisäämisen jälkeen."
+
+#: templates/base.html:17
+msgid ""
+"Insecure-cookie mode is enabled. Use only via localhost or an encrypted "
+"tunnel (VPN); otherwise passwords and sessions are exposed."
+msgstr "Insecure-cookie-tila on käytössä. Käytä vain localhostin kautta tai salatun tunnelin (VPN) kautta; muuten salasanat ja istunnot eivät ole suojattuja."
+
+#: templates/login.html:2 templates/login.html:5 templates/login.html:23
+msgid "Sign in"
+msgstr "Kirjaudu sisään"
+
+#: templates/logout.html:2 templates/logout.html:5 templates/logout.html:9
+msgid "Sign out"
+msgstr "Kirjaudu ulos"
+
+#: templates/logout.html:6
+msgid "You are signed in as"
+msgstr "Olet kirjautuneena sisään nimellä"
+
+#: templates/logout.html:10
+msgid "Cancel"
+msgstr "Peruuta"

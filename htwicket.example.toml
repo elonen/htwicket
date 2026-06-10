@@ -11,7 +11,9 @@ htpasswd_file = "/var/www/.htpasswd"
 
 insecure_cookies = false        # true only behind plain http (demo); drops Secure flag
 basic_auth_passthrough = false  # true = accept Authorization: Basic on /auth (legacy scripts)
-# upgrade_hash_on_login = false # rehash DES/apr1 entries to bcrypt at successful login
+# upgrade_hash_on_login = false # rehash entries not in password_hash at successful login
+# password_hash = "bcrypt"      # or "argon2id" (stronger, but those lines stop being readable by
+#                               # plain nginx auth_basic). Verification reads both either way.
 
 min_password_len = 8
 session_idle_hours = 12              # sliding re-mint past half-life

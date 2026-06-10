@@ -13,8 +13,8 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 | templates / styling | `askama` (server-rendered HTML, one inlined CSS, no JS) |
 | session cookie | `jsonwebtoken` — JWT, HS256 **pinned** (`rust_crypto`, no C deps) |
 | CEL expressions | `cel-interpreter` |
-| password verify (legacy in) | `htpasswd-verify` (`$apr1$`, `{SHA}`) + `pwhash` (DES, `$1$/$5$/$6$`) |
-| password write (bcrypt out) | `bcrypt` |
+| password verify (legacy in) | `htpasswd-verify` (`$apr1$`, `{SHA}`) + `pwhash` (DES, `$1$/$5$/$6$`) + `argon2` |
+| password write (configurable out) | `bcrypt` (default) or `argon2` (`password_hash` config) |
 | i18n | gettext `po/*.po`, compiled by `build.rs` into a static table |
 | logging | `tracing` → stdout (journald/docker) |
 

@@ -1,12 +1,12 @@
-# htwicket - migrate from old .htaccess to something a slightly more modern
+# htwicket - Modernized .htaccess with user management web UI & CLI
 
-Small auth gateway + user manager for nginx `auth_request` (or similar for other reverse proxies).
-Provides a web GUI for editing `.htpasswd`, upgrading its hashes to bcrypt,
-and providing custom user data backend apps.
+Small auth gateway + user manager for `auth_request` (nginx, or other reverse proxies).
+Provides a web GUI for editing `.htpasswd`, upgrading its hashes to a modern algorithm,
+and providing custom user data for backend apps through headers and/or JWT.
 
 - **Backwards compatible**: verifies existing `.htpasswd` files as-is (DES crypt, `$apr1$`,
-  `$1$`, `$5$`/`$6$`, bcrypt). Writes bcrypt only, so the file stays usable with plain
-  nginx `auth_basic` as an escape hatch.
+  `$1$`, `$5$`/`$6$`, bcrypt, argon2). Writes bcrypt by default, so the file stays usable with
+  plain nginx `auth_basic` as an escape hatch; opt into `argon2id` when you don't need that.
 - **Modern sessions**: login form + JWT cookie (real logout, sliding expiry, sessions die on
   password change). Optional `Authorization: Basic` passthrough for scripted clients.
 - **App-agnostic user attributes**: declare fields in config (`is_admin`, `can_upload`, ...),

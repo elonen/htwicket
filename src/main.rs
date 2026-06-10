@@ -1,5 +1,6 @@
 //! htwicket — small auth gateway + user manager for nginx `auth_request`.
-//! Design: docs/architecture.md. Backwards compatible with .htpasswd; writes bcrypt only.
+//! Design: docs/architecture.md. Backwards compatible with .htpasswd; writes bcrypt (default) or
+//! argon2id (`password_hash`).
 
 mod authn;
 mod cel;

@@ -28,9 +28,14 @@ pub struct Config {
     /// Accept `Authorization: Basic` on /auth (backwards compat for scripted clients).
     #[serde(default)]
     pub basic_auth_passthrough: bool,
-    /// Rehash legacy entries to bcrypt on successful login (plaintext in hand).
+    /// Rehash entries not in `password_hash` on successful login (plaintext in hand).
     #[serde(default)]
     pub upgrade_hash_on_login: bool,
+    /// Algorithm for newly written hashes. bcrypt keeps `.htpasswd` readable by nginx
+    /// `auth_basic`; argon2id is stronger but forfeits that escape hatch. Verification reads both
+    /// (plus all legacy formats) regardless.
+    #[serde(default = "d_password_hash")]
+    pub password_hash: PasswordAlgo,
     #[serde(default = "d_min_password_len")]
     pub min_password_len: usize,
     /// JWT exp; sliding re-mint past half-life.
@@ -56,6 +61,14 @@ pub struct Config {
 pub struct Superadmins {
     /// CEL: who may access /admin (admins of htwicket itself, not of the proxied app).
     pub expr: String,
+}
+
+/// Hash algorithm for newly written passwords (see the `password_hash` config field).
+#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum PasswordAlgo {
+    Bcrypt,
+    Argon2id,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Debug)]
@@ -138,10 +151,14 @@ pub struct Overrides {
     #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub basic_auth_passthrough: Option<bool>,
-    /// Rehash legacy entries to bcrypt on successful login
+    /// Rehash entries not in password_hash on successful login
     #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upgrade_hash_on_login: Option<bool>,
+    /// Algorithm for newly written hashes (bcrypt keeps nginx auth_basic compat; argon2id is stronger)
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password_hash: Option<PasswordAlgo>,
     /// Minimum password length
     #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -259,12 +276,14 @@ mod tests {
                     min_password_len = 1
                     session_idle_hours = 1
                     session_max_days = 1
+                    password_hash = "argon2id"
                     [superadmins]
                     expr = "false"
                 "#,
             )?;
             jail.set_env("HTWICKET_LISTEN", "env");
             jail.set_env("HTWICKET_BASE_PATH", "/env");
+            jail.set_env("HTWICKET_PASSWORD_HASH", "bcrypt");
             let cli = Overrides {
                 listen: Some("cli".into()),
                 htpasswd_file: Some("/cli/.htpasswd".into()),
@@ -276,6 +295,7 @@ mod tests {
                 min_password_len: Some(3),
                 session_idle_hours: Some(3),
                 session_max_days: Some(3),
+                password_hash: Some(PasswordAlgo::Argon2id),
                 ..Overrides::default()
             };
             let cfg = load(Path::new("htwicket.toml"), &cli)
@@ -291,6 +311,7 @@ mod tests {
             assert_eq!(cfg.min_password_len, 3);
             assert_eq!(cfg.session_idle_hours, 3);
             assert_eq!(cfg.session_max_days, 3);
+            assert_eq!(cfg.password_hash, PasswordAlgo::Argon2id); // CLI beats env beats file
             Ok(())
         });
     }
@@ -331,6 +352,9 @@ fn d_state_dir() -> PathBuf {
 }
 fn d_min_password_len() -> usize {
     8
+}
+fn d_password_hash() -> PasswordAlgo {
+    PasswordAlgo::Bcrypt
 }
 fn d_session_idle_hours() -> u32 {
     12

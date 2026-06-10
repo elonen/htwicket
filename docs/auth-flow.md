@@ -54,7 +54,7 @@ request — no restart or cache to bust. Details: [configuration.md](configurati
 2. Rate-limit gate (per-username backoff + per-IP cap). Refused → re-render form with a message.
 3. Verify the password against the stored hash (any legacy format in, see
    [configuration.md](configuration.md#state-files)).
-4. On success: optionally rehash a legacy entry to bcrypt (`upgrade_hash_on_login`), bake
+4. On success: optionally rehash an entry not in `password_hash` to it (`upgrade_hash_on_login`), bake
    `[jwt-claims.*]`, **mint** the session JWT, `Set-Cookie`, `303` to `rd`.
 
 `rd` is validated as a relative path (starts `/`, not `//`, no control chars) — bad/missing `rd`

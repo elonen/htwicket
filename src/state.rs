@@ -448,7 +448,8 @@ mod tests {
         let htpasswd = dir.path().join(".htpasswd");
         let mut db = UserDb::load(cfg_with_fields(htpasswd.clone())).unwrap();
 
-        let hash = crate::authn::hash_password("hunter2").unwrap();
+        let hash =
+            crate::authn::hash_password("hunter2", crate::config::PasswordAlgo::Bcrypt).unwrap();
         db.write_password("dave", &hash).unwrap();
         let file = fs::read_to_string(&htpasswd).unwrap();
         assert!(file.starts_with("dave:$2"));

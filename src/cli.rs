@@ -80,13 +80,19 @@ fn run_user(cfg: Config, action: UserAction) -> anyhow::Result<()> {
             if db.users.get(&name).is_some_and(|u| u.hash.is_some()) {
                 bail!("user `{name}` already exists (use `user passwd` to change the password)");
             }
-            let hash = crate::authn::hash_password(&read_password(random, cfg.min_password_len)?)?;
+            let hash = crate::authn::hash_password(
+                &read_password(random, cfg.min_password_len)?,
+                cfg.password_hash,
+            )?;
             db.write_password(&name, &hash)?;
             println!("added user `{name}`");
         }
         UserAction::Passwd { name, random } => {
             require_valid(&name)?;
-            let hash = crate::authn::hash_password(&read_password(random, cfg.min_password_len)?)?;
+            let hash = crate::authn::hash_password(
+                &read_password(random, cfg.min_password_len)?,
+                cfg.password_hash,
+            )?;
             db.write_password(&name, &hash)?;
             println!("set password for `{name}`");
         }

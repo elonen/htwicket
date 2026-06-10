@@ -226,7 +226,7 @@ struct LoginForm {
 }
 
 /// Verify (rate-limited), mint the session JWT (factors=["pw"], pwd_fp, jwt-claims), 303 to rd.
-/// Optionally rehash a legacy entry to bcrypt (upgrade_hash_on_login).
+/// Optionally rehash an entry not in `password_hash` to it (upgrade_hash_on_login).
 async fn login_submit(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -270,11 +270,12 @@ async fn login_submit(
     }
     state.limiter.record_success(&form.username, &ip);
 
-    // Opt-in: rehash a non-bcrypt entry now that we hold the plaintext.
+    // Opt-in: rehash an entry not in the configured algorithm now that we hold the plaintext.
     let hash = hash.unwrap();
     if state.cfg.upgrade_hash_on_login
-        && !hash.starts_with("$2")
-        && let Ok(new_hash) = authn::hash_password_blocking(form.password.clone()).await
+        && authn::needs_rehash(&hash, state.cfg.password_hash)
+        && let Ok(new_hash) =
+            authn::hash_password_blocking(form.password.clone(), state.cfg.password_hash).await
     {
         let _ = state
             .db
@@ -391,7 +392,8 @@ async fn account_submit(
         } else if newpw.len() < state.cfg.min_password_len {
             error = Some(tr(&lang, "New password is too short."));
         } else {
-            let hash = authn::hash_password_blocking(newpw.clone()).await?;
+            let hash =
+                authn::hash_password_blocking(newpw.clone(), state.cfg.password_hash).await?;
             state.db.write().await.write_password(&user, &hash)?;
             notice = Some(tr(&lang, "Password changed."));
         }
@@ -546,9 +548,9 @@ async fn save_all(
         {
             return Ok(Err(tr(lang, "Password is too short.")));
         }
-        // Hash here, before the write lock is taken — bcrypt is too slow to run under it.
+        // Hash here, before the write lock is taken — bcrypt/argon2 are too slow to run under it.
         let password_hash = match password {
-            Some(p) => Some(authn::hash_password_blocking(p).await?),
+            Some(p) => Some(authn::hash_password_blocking(p, state.cfg.password_hash).await?),
             None => None,
         };
         let fields = collect_fields(&state.cfg, form, |n| format!("f_{n}[{old}]"), |_| true);
@@ -612,7 +614,7 @@ async fn add_one(
     if pw.len() < state.cfg.min_password_len {
         return Ok(Err(tr(lang, "Password is too short.")));
     }
-    let hash = authn::hash_password_blocking(pw.clone()).await?;
+    let hash = authn::hash_password_blocking(pw.clone(), state.cfg.password_hash).await?;
     state.db.write().await.write_password(username, &hash)?;
     Ok(Ok(tr(lang, "User added.")))
 }

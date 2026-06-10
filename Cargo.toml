@@ -34,6 +34,9 @@ systemd-units = { enable = false, start = false }
 
 [dependencies]
 anyhow = "1.0.102"
+# Optional password_hash = "argon2id" write path. Pure-Rust (blake2 + password-hash), no C crypto
+# toolchain — same reasoning as the jsonwebtoken rust_crypto note below.
+argon2 = "0.5.3"
 askama = "0.16.0"
 axum = "0.8.9"
 base64 = "0.22.1"

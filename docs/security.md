@@ -48,10 +48,14 @@ the cache until its 5-min TTL expires or the file is reloaded, even while the fo
 
 ## Passwords at rest
 
-- Writes are **bcrypt only** (default cost), keeping `.htpasswd` verifiable by plain nginx
-  `auth_basic` as an escape hatch.
-- Legacy hashes (DES, `$apr1$`, `{SHA}`, `$1$`, `$5$`/`$6$`) verify but are never written; opt-in
-  `upgrade_hash_on_login` rehashes them to bcrypt the moment a user logs in.
+- Writes use the **`password_hash`** algorithm (`src/config.rs`). Default **bcrypt** (default cost),
+  which keeps `.htpasswd` verifiable by plain nginx `auth_basic` as an escape hatch.
+- **`argon2id`** is opt-in: stronger, memory-hard (`Argon2::default()` — v19, m=19 MiB, t=2, p=1),
+  but argon2 lines are **not** readable by nginx `auth_basic`, so that escape hatch is forfeited
+  (`basic_auth_passthrough` is unaffected — htwicket verifies there, not nginx).
+- Verification reads everything either way: DES, `$apr1$`, `{SHA}`, `$1$`, `$5$`/`$6$`, bcrypt, and
+  argon2. Opt-in `upgrade_hash_on_login` rehashes any entry **not already in `password_hash`** —
+  legacy *and* the other strong algorithm — to it the moment a user logs in.
 - Unknown/garbage hashes verify `false`.
 - Basic-passthrough caches successful verifies for 5 min keyed by SHA-256(`user:pass`), cleared on
   file reload (bcrypt-per-request would be unaffordable).

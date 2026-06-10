@@ -37,6 +37,12 @@ fn free_port() -> u16 {
 /// Spawn a server with the given sidecar contents and a couple of seeded users (admin, bob),
 /// both with password "password". `admin` is a superadmin (by username); `bob` is not.
 fn spawn(sidecar: &str) -> Server {
+    spawn_with(sidecar, "")
+}
+
+/// As `spawn`, but `extra` is spliced in among the scalar top-level keys (must precede any
+/// `[table]`), letting a test set keys like `password_hash` / `upgrade_hash_on_login`.
+fn spawn_with(sidecar: &str, extra: &str) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let htpasswd = dir.path().join(".htpasswd");
     std::fs::write(&htpasswd, format!("admin:{PW_HASH}\nbob:{PW_HASH}\n")).unwrap();
@@ -54,6 +60,7 @@ htpasswd_file = "{htpasswd}"
 state_dir = "{state}"
 insecure_cookies = true
 basic_auth_passthrough = true
+{extra}
 [superadmins]
 expr = "username == 'admin' || fields.is_admin"
 [fields.is_admin]
@@ -491,6 +498,50 @@ fn password_change_invalidates_session() {
         c.get(format!("{}/auth", srv.base)).send().unwrap().status(),
         401
     );
+}
+
+#[test]
+fn login_migrates_hash_to_configured_algo() {
+    // bob is seeded as bcrypt. With password_hash=argon2id + upgrade_hash_on_login, a successful
+    // login (server holds the plaintext) must rewrite his .htpasswd line to argon2id; a user who
+    // never logs in stays bcrypt.
+    let srv = spawn_with(
+        "",
+        "password_hash = \"argon2id\"\nupgrade_hash_on_login = true",
+    );
+    let htpasswd = srv.dir.path().join(".htpasswd");
+
+    let before = std::fs::read_to_string(&htpasswd).unwrap();
+    assert!(
+        before.lines().all(|l| l.contains(":$2")),
+        "precondition: both users seeded bcrypt:\n{before}"
+    );
+
+    let c = client();
+    let r = c
+        .post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 303); // rehash is written before the response returns
+
+    let after = std::fs::read_to_string(&htpasswd).unwrap();
+    assert!(
+        after.lines().any(|l| l.starts_with("bob:$argon2id$")),
+        "login did not migrate bob to argon2id:\n{after}"
+    );
+    assert!(
+        after.lines().any(|l| l.starts_with("admin:$2")),
+        "admin never logged in, should stay bcrypt:\n{after}"
+    );
+
+    // The migrated argon2id hash still authenticates with the same password.
+    let auth = reqwest::blocking::Client::new()
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(auth.status(), 200);
 }
 
 #[test]

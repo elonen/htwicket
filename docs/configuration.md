@@ -37,7 +37,8 @@ Defaults in parentheses. See the example for inline guidance.
 | `jwt_secret` | HS256 key; auto-generated + persisted under `state_dir` if unset |
 | `insecure_cookies` (`false`) | drop the cookie `Secure` flag — plain-http demo only; see [security.md](security.md) |
 | `basic_auth_passthrough` (`false`) | accept `Authorization: Basic` on `/auth` ([auth-flow.md](auth-flow.md)) |
-| `upgrade_hash_on_login` (`false`) | rehash a legacy entry to bcrypt on successful login |
+| `upgrade_hash_on_login` (`false`) | rehash an entry not in `password_hash` to it on successful login |
+| `password_hash` (`bcrypt`) | algorithm for newly written hashes: `bcrypt` (nginx `auth_basic`-readable) or `argon2id` (stronger, not). Verification reads both + all legacy regardless. See [security.md](security.md) |
 | `min_password_len` (`8`) | enforced by the UI + CLI |
 | `session_idle_hours` (`12`) | JWT idle expiry; sliding re-mint past half-life |
 | `session_max_days` (`7`) | absolute session cap |
@@ -86,8 +87,9 @@ Three plain files live beside each other (all under nginx/Apache's stock `locati
 glob, to avoid being web-served). Managed by `src/state.rs`.
 
 - **`.htpasswd`** — canonical passwords, one `user:hash` line each. Existing files work unmodified.
-  Verifies DES crypt, `$apr1$`, `{SHA}`, `$1$`, `$5$`/`$6$`, and bcrypt (`$2a/2b/2y`); **writes
-  bcrypt only**, so the file stays usable with plain nginx `auth_basic`.
+  Verifies DES crypt, `$apr1$`, `{SHA}`, `$1$`, `$5$`/`$6$`, bcrypt (`$2a/2b/2y`), and argon2
+  (`$argon2*`); **writes the `password_hash` algorithm** (default bcrypt, keeping the file usable
+  with plain nginx `auth_basic`; `argon2id` forfeits that — see [security.md](security.md)).
 - **`.htwicket.toml`** (sidecar) — `[users."<name>"]` table per user holding the declared fields.
   Fields htwicket doesn't know are **warned about but preserved verbatim**, never dropped.
 - **`.htwicket.lock`** — advisory `flock`, shared by server *and* CLI.

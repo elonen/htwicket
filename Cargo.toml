@@ -22,6 +22,7 @@ assets = [
     ["README.md", "usr/share/doc/htwicket/README", "644"],
     ["LICENSE-MIT", "usr/share/doc/htwicket/LICENSE-MIT", "644"],
     ["LICENSE-APACHE", "usr/share/doc/htwicket/LICENSE-APACHE", "644"],
+    ["docs/*.md", "usr/share/doc/htwicket/", "644"],
     ["htwicket.example.toml", "usr/share/doc/htwicket/examples/htwicket.toml", "644"],
     ["htwicket.example.toml", "etc/htwicket.toml", "644"],
 ]

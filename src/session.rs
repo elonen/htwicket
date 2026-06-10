@@ -36,19 +36,19 @@ pub fn now() -> u64 {
     jsonwebtoken::get_current_timestamp()
 }
 
-/// Fresh login: iat = orig_iat = now, exp = now + session_hours.
+/// Fresh login: iat = orig_iat = now, exp = now + session_idle_hours.
 pub fn new_session(
     sub: &str,
     factors: Vec<String>,
     pwd_fp: Option<String>,
     extra: serde_json::Map<String, serde_json::Value>,
     now: u64,
-    session_hours: u32,
+    session_idle_hours: u32,
 ) -> Claims {
     Claims {
         sub: sub.to_string(),
         iat: now,
-        exp: now + session_hours as u64 * 3600,
+        exp: now + session_idle_hours as u64 * 3600,
         iss: ISSUER.to_string(),
         orig_iat: now,
         factors,
@@ -59,10 +59,10 @@ pub fn new_session(
 
 /// Sliding re-mint: new iat/exp, everything else (orig_iat, factors, pwd_fp, baked claims) preserved.
 /// Not a re-login — jwt-claims stay as baked at login (headers are the fresh channel).
-pub fn remint(prev: &Claims, now: u64, session_hours: u32) -> Claims {
+pub fn remint(prev: &Claims, now: u64, session_idle_hours: u32) -> Claims {
     Claims {
         iat: now,
-        exp: now + session_hours as u64 * 3600,
+        exp: now + session_idle_hours as u64 * 3600,
         ..prev.clone()
     }
 }
@@ -90,9 +90,9 @@ pub fn verify(token: &str, secret: &[u8], session_max_days: u32) -> Option<Claim
     Some(claims)
 }
 
-/// Sliding renewal: re-mint once more than half of session_hours has elapsed since iat.
-pub fn needs_remint(claims: &Claims, now: u64, session_hours: u32) -> bool {
-    now.saturating_sub(claims.iat) > (session_hours as u64 * 3600) / 2
+/// Sliding renewal: re-mint once more than half of session_idle_hours has elapsed since iat.
+pub fn needs_remint(claims: &Claims, now: u64, session_idle_hours: u32) -> bool {
+    now.saturating_sub(claims.iat) > (session_idle_hours as u64 * 3600) / 2
 }
 
 /// Load jwt_secret from config, else read/create {state_dir}/jwt_secret (32 random bytes, 0600).

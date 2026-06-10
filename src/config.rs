@@ -34,8 +34,8 @@ pub struct Config {
     #[serde(default = "d_min_password_len")]
     pub min_password_len: usize,
     /// JWT exp; sliding re-mint past half-life.
-    #[serde(default = "d_session_hours")]
-    pub session_hours: u32,
+    #[serde(default = "d_session_idle_hours")]
+    pub session_idle_hours: u32,
     /// Absolute cap via orig_iat claim.
     #[serde(default = "d_session_max_days")]
     pub session_max_days: u32,
@@ -203,7 +203,7 @@ fn d_state_dir() -> PathBuf {
 fn d_min_password_len() -> usize {
     8
 }
-fn d_session_hours() -> u32 {
+fn d_session_idle_hours() -> u32 {
     12
 }
 fn d_session_max_days() -> u32 {

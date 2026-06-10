@@ -149,8 +149,8 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap) -> Handler {
         && (claims.pwd_fp.is_none() || claims.pwd_fp == user.pwd_fp)
     {
         let mut out = auth_response_headers(&state, user, &claims.sub)?;
-        if session::needs_remint(&claims, session::now(), state.cfg.session_hours) {
-            let next = session::remint(&claims, session::now(), state.cfg.session_hours);
+        if session::needs_remint(&claims, session::now(), state.cfg.session_idle_hours) {
+            let next = session::remint(&claims, session::now(), state.cfg.session_idle_hours);
             let token = session::mint(&next, &state.secret)?;
             out.insert(header::SET_COOKIE, cookie_header(&token, &state.cfg)?);
         }
@@ -263,7 +263,7 @@ async fn login_submit(
         pwd_fp,
         extra,
         session::now(),
-        state.cfg.session_hours,
+        state.cfg.session_idle_hours,
     );
     let token = session::mint(&claims, &state.secret)?;
     let target = if valid_rd(&rd) { rd } else { "/".to_string() };
@@ -754,7 +754,7 @@ fn redirect_to_login(state: &AppState, rd: &str) -> Response {
 
 fn cookie_header(token: &str, cfg: &Config) -> Result<HeaderValue, AppError> {
     let secure = if cfg.insecure_cookies { "" } else { "; Secure" };
-    let max_age = cfg.session_hours as u64 * 3600;
+    let max_age = cfg.session_idle_hours as u64 * 3600;
     let s = format!(
         "{}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}{secure}",
         session::COOKIE_NAME

@@ -50,7 +50,7 @@ insecure_cookies = false           # true drops Secure flag (plain-http demo); l
 basic_auth_passthrough = false     # demo sets true (backwards compat for scripted clients)
 # upgrade_hash_on_login = false    # opt-in: rehash legacy entries to bcrypt at login (plaintext in hand)
 min_password_len = 8
-session_hours = 12                 # JWT exp; sliding re-mint past half-life
+session_idle_hours = 12                 # JWT exp; sliding re-mint past half-life
 session_max_days = 7               # absolute cap via orig_iat
 
 [superadmins]                      # admins of htwicket itself (GUI /admin access)
@@ -91,7 +91,7 @@ Runtime eval error → 500 + log, fail closed. `X-Remote-User-Id: <username>` al
 ## HTTP endpoints (all under base_path)
 
 - `GET /auth` — nginx auth_request target. Order: session cookie → Basic header (if passthrough) → 401.
-  200: identity/CEL headers + sliding re-mint (`Set-Cookie` when >half of session_hours elapsed).
+  200: identity/CEL headers + sliding re-mint (`Set-Cookie` when >half of session_idle_hours elapsed).
   401: bare (nginx swallows subrequest headers anyway; browsers handled by error_page redirect).
 - `GET|POST /login` — form → JWT cookie → 303 to `rd` (validated: relative, starts `/`, no `//`).
 - `GET|POST /logout` — GET shows confirm page w/ POST button (safe link target); POST clears cookie.

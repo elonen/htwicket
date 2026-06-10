@@ -19,6 +19,12 @@ min_password_len = 8
 session_idle_hours = 12              # sliding re-mint past half-life
 session_max_days = 7            # absolute session cap
 
+http_accept_language = true     # consult the browser's Accept-Language header for the UI locale
+# default_lang = "'en'"         # CEL (string) over {username, fields.*}: fallback locale used when
+#                               # Accept-Language has no catalog match (fi/fr/zh) or is disabled
+#                               # above. Note the inner quotes — the value is a CEL expression, so a
+#                               # literal locale is single-quoted. e.g. "'fi'" forces Finnish.
+
 [superadmins]
 # Who may open /admin (htwicket's own user management) — CEL over {username, fields.*}
 expr = "username == 'admin' || fields.is_admin"

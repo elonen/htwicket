@@ -44,6 +44,14 @@ pub struct Config {
     /// Absolute cap via orig_iat claim.
     #[serde(default = "d_session_max_days")]
     pub session_max_days: u32,
+    /// Honor the browser's Accept-Language header (matched against compiled catalogs) before
+    /// falling back to default_lang.
+    #[serde(default = "d_http_accept_language")]
+    pub http_accept_language: bool,
+    /// CEL (string) over {username, fields.*}: fallback UI locale when Accept-Language yields no
+    /// catalog match (or http_accept_language is off). Empty username/fields on pre-login pages.
+    #[serde(default = "d_default_lang")]
+    pub default_lang: String,
     pub superadmins: Superadmins,
     /// App-specific user attribute schema; htwicket core is app-agnostic.
     #[serde(default)]
@@ -171,6 +179,14 @@ pub struct Overrides {
     #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_max_days: Option<u32>,
+    /// Honor the browser Accept-Language header before default_lang
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_accept_language: Option<bool>,
+    /// Fallback locale CEL expr (over {username, fields.*}) when Accept-Language has no match
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_lang: Option<String>,
 }
 
 pub fn load(path: &Path, cli: &Overrides) -> anyhow::Result<Config> {
@@ -296,6 +312,7 @@ mod tests {
                 session_idle_hours: Some(3),
                 session_max_days: Some(3),
                 password_hash: Some(PasswordAlgo::Argon2id),
+                http_accept_language: Some(false),
                 ..Overrides::default()
             };
             let cfg = load(Path::new("htwicket.toml"), &cli)
@@ -312,6 +329,7 @@ mod tests {
             assert_eq!(cfg.session_idle_hours, 3);
             assert_eq!(cfg.session_max_days, 3);
             assert_eq!(cfg.password_hash, PasswordAlgo::Argon2id); // CLI beats env beats file
+            assert!(!cfg.http_accept_language); // CLI override of the true default
             Ok(())
         });
     }
@@ -328,6 +346,8 @@ mod tests {
             assert_eq!(cfg.listen, d_listen());
             assert_eq!(cfg.session_max_days, d_session_max_days());
             assert!(!cfg.insecure_cookies);
+            assert!(cfg.http_accept_language); // defaults on
+            assert_eq!(cfg.default_lang, d_default_lang());
             Ok(())
         });
     }
@@ -361,6 +381,12 @@ fn d_session_idle_hours() -> u32 {
 }
 fn d_session_max_days() -> u32 {
     7
+}
+fn d_http_accept_language() -> bool {
+    true
+}
+fn d_default_lang() -> String {
+    "'en'".into()
 }
 fn d_false_expr() -> String {
     "false".into()

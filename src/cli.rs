@@ -12,7 +12,7 @@ use crate::state::UserDb;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Auth gateway + .htpasswd user manager for nginx auth_request"
+    about = "Modernized .htaccess with user management web UI & CLI"
 )]
 pub struct Cli {
     /// Config file path

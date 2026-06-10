@@ -20,7 +20,7 @@ use tokio::sync::RwLock;
 use crate::authn::{self, RateLimiter, Throttle, VerifyCache};
 use crate::cel::{self, CelValue, CompiledExpr};
 use crate::config::{Config, FieldSpec, FieldType};
-use crate::i18n::tr;
+use crate::i18n::{best_locale, tr};
 use crate::session::{self, Claims};
 use crate::state::{User, UserDb};
 use templates::{
@@ -34,6 +34,8 @@ struct CompiledExpressions {
     superadmin: CompiledExpr,
     /// Per-field `user_editable_expr` (bool over {username, fields.*}) tells if given user may edit it.
     field_editable: BTreeMap<String, CompiledExpr>,
+    /// `default_lang` (string over {username, fields.*}): the fallback UI locale.
+    default_lang: CompiledExpr,
 }
 
 #[derive(Clone)]
@@ -96,11 +98,14 @@ fn compile_all(cfg: &Config) -> anyhow::Result<CompiledExpressions> {
             .with_context(|| format!("fields.{name}.user_editable_expr"))?;
         field_editable.insert(name.clone(), expr);
     }
+    let default_lang =
+        cel::compile(&cfg.default_lang, FieldType::String).context("default_lang")?;
     Ok(CompiledExpressions {
         headers,
         jwt_claims,
         superadmin,
         field_editable,
+        default_lang,
     })
 }
 
@@ -211,7 +216,7 @@ async fn login_page(
 ) -> Handler {
     render_login(
         &state,
-        &lang_of(&headers),
+        &lang_of(&state, &headers, None, ""),
         q.rd.unwrap_or_default(),
         None,
         String::new(),
@@ -235,7 +240,7 @@ async fn login_submit(
     if !origin_ok(&headers) {
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
-    let lang = lang_of(&headers);
+    let lang = lang_of(&state, &headers, None, ""); // no authenticated user yet
     let rd = form.rd.unwrap_or_default();
     let ip = client_ip(&headers);
     if let Err(t) = state.limiter.check(&form.username, &ip) {
@@ -314,8 +319,11 @@ async fn logout_page(State(state): State<AppState>, headers: HeaderMap) -> Handl
     let Some(claims) = current_claims(&headers, &state) else {
         return Ok(redirect_to_login(&state, "/"));
     };
+    let db = state.db.read().await;
+    let lang = lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub);
+    drop(db);
     render(LogoutTemplate {
-        lang: lang_of(&headers),
+        lang,
         insecure_cookies: state.cfg.insecure_cookies,
         username: claims.sub,
     })
@@ -342,7 +350,7 @@ async fn account_page(State(state): State<AppState>, headers: HeaderMap) -> Hand
         return Ok(redirect_to_login(&state, "/account"));
     };
     render(AccountTemplate {
-        lang: lang_of(&headers),
+        lang: lang_of(&state, &headers, Some(user), &claims.sub),
         insecure_cookies: state.cfg.insecure_cookies,
         username: claims.sub.clone(),
         fields: account_field_views(&state, user, &claims.sub),
@@ -365,8 +373,11 @@ async fn account_submit(
         return Ok(redirect_to_login(&state, "/account"));
     };
     ensure_fresh(&state).await?;
-    let lang = lang_of(&headers);
     let user = claims.sub.clone();
+    let lang = {
+        let db = state.db.read().await;
+        lang_of(&state, &headers, db.users.get(&user), &user)
+    };
 
     let mut error = None;
     let mut notice = None;
@@ -445,15 +456,20 @@ async fn account_submit(
 }
 
 async fn admin_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
-    if let Err(resp) = require_superadmin(&state, &headers).await {
-        return Ok(resp);
-    }
-    render_admin(&state, &lang_of(&headers), None, None).await
+    let claims = match require_superadmin(&state, &headers).await {
+        Ok(claims) => claims,
+        Err(resp) => return Ok(resp),
+    };
+    let lang = {
+        let db = state.db.read().await;
+        lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub)
+    };
+    render_admin(&state, &lang, None, None).await
 }
 
 /// Shared /admin prologue: session claims (else login redirect), fresh DB, superadmin gate
-/// (else 403). Err carries the early-exit response.
-async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
+/// (else 403). Ok carries the verified claims (for the locale context); Err the early-exit response.
+async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<Claims, Response> {
     let Some(claims) = current_claims(headers, state) else {
         return Err(redirect_to_login(state, "/admin"));
     };
@@ -464,7 +480,7 @@ async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<(),
     if !is_superadmin(state, db.users.get(&claims.sub), &claims.sub) {
         return Err(StatusCode::FORBIDDEN.into_response());
     }
-    Ok(())
+    Ok(claims)
 }
 
 /// Superadmins only. Actions: `save` (batch edit/rename + set passwords across all rows),
@@ -477,11 +493,15 @@ async fn admin_submit(
     if !origin_ok(&headers) {
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
-    if let Err(resp) = require_superadmin(&state, &headers).await {
-        return Ok(resp);
-    }
+    let claims = match require_superadmin(&state, &headers).await {
+        Ok(claims) => claims,
+        Err(resp) => return Ok(resp),
+    };
 
-    let lang = lang_of(&headers);
+    let lang = {
+        let db = state.db.read().await;
+        lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub)
+    };
     let action = form.get("action").map(String::as_str).unwrap_or("");
     // Outer Err = internal failure (500 + log); inner Err = validation message for the page.
     let outcome = if action == "save" {
@@ -888,13 +908,27 @@ fn render<T: askama::Template>(t: T) -> Handler {
     Ok(Html(t.render()?).into_response())
 }
 
-/// Negotiate the request locale from Accept-Language against the compiled catalogs (else "en").
-fn lang_of(headers: &HeaderMap) -> String {
-    crate::i18n::best_locale(
-        headers
+/// Negotiate the request locale: the browser's Accept-Language (matched against the compiled
+/// catalogs) when `http_accept_language` is on and it matches; otherwise the `default_lang` CEL
+/// fallback over {username, fields.*}, and "en" if that errors (e.g. `fields.*` on a pre-login
+/// page) or yields a non-string.
+fn lang_of(state: &AppState, headers: &HeaderMap, user: Option<&User>, username: &str) -> String {
+    if state.cfg.http_accept_language {
+        let header = headers
             .get(header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    )
+            .and_then(|v| v.to_str().ok());
+        if let Some(loc) = best_locale(header) {
+            return loc;
+        }
+    }
+    let empty: BTreeMap<String, toml::Value> = BTreeMap::new();
+    let fields = user.map(|u| &u.fields).unwrap_or(&empty);
+    match cel::context(fields, username)
+        .and_then(|ctx| cel::eval(&state.compiled.default_lang, &ctx))
+    {
+        Ok(CelValue::Str(s)) => s,
+        _ => "en".to_string(),
+    }
 }
 
 #[cfg(test)]

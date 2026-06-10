@@ -157,22 +157,32 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap) -> Handler {
         return Ok((StatusCode::OK, out).into_response());
     }
 
-    // 2) Basic passthrough (scripted clients). Never mints a cookie.
+    // 2) Basic passthrough (scripted clients). Never mints a cookie. Brute-force limited via the
+    //    same RateLimiter as the login form, but only cache *misses* touch it: an authenticated
+    //    client that polls /auth on every proxied request must never spend per-IP budget. See
+    //    docs/security.md "Brute force".
     if state.cfg.basic_auth_passthrough
         && let Some((user, pass)) = basic_credentials(&headers)
         && let Some(u) = db.users.get(&user)
     {
-        let ok = state.cache.check(&user, &pass)
-            || u.hash.as_deref().is_some_and(|h| {
-                let v = crate::authn::verify_password(&pass, h);
-                if v {
-                    state.cache.store(&user, &pass);
-                }
-                v
-            });
-        if ok {
+        if state.cache.check(&user, &pass) {
             let out = auth_response_headers(&state, u, &user)?;
             return Ok((StatusCode::OK, out).into_response());
+        }
+        // Cache miss ⇒ a real bcrypt verify. Gate it on the limiter (a locked-out user is refused
+        // even with the right password) and count only failures.
+        let ip = client_ip(&headers);
+        if state.limiter.check(&user, &ip).is_ok() {
+            if u.hash
+                .as_deref()
+                .is_some_and(|h| crate::authn::verify_password(&pass, h))
+            {
+                state.limiter.record_success(&user, &ip);
+                state.cache.store(&user, &pass);
+                let out = auth_response_headers(&state, u, &user)?;
+                return Ok((StatusCode::OK, out).into_response());
+            }
+            state.limiter.record_failure(&user, &ip);
         }
     }
 
@@ -878,4 +888,21 @@ fn lang_of(headers: &HeaderMap) -> String {
             .get(header::ACCEPT_LANGUAGE)
             .and_then(|v| v.to_str().ok()),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_rd;
+
+    #[test]
+    fn valid_rd_accepts_relative_rejects_external_and_control() {
+        for ok in ["/", "/x", "/dashboard", "/a/b?q=1#frag"] {
+            assert!(valid_rd(ok), "should accept {ok:?}");
+        }
+        // empty, scheme, protocol-relative, backslash trick, and control chars are all open-redirect
+        // or smuggling risks.
+        for bad in ["", "https://evil", "//evil", "/\\evil", "/a\nb", "/a\0b"] {
+            assert!(!valid_rd(bad), "should reject {bad:?}");
+        }
+    }
 }

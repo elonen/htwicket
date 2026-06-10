@@ -16,7 +16,7 @@ references here live in [auth-flow.md](auth-flow.md).
 
 ## CSRF
 
-No token machinery. Two layers: `SameSite=Lax` on the session cookie, and an **Origin-vs-Host check
+No token machinery - use a modern browser for best CSRF safety. Two layers: `SameSite=Lax` on the session cookie, and an **Origin-vs-Host check
 on every POST** — a present `Origin` must match `Host`, else `403`. A missing `Origin` is allowed
 (SameSite covers it; `curl`/older clients send none).
 
@@ -52,7 +52,7 @@ the cache until its 5-min TTL expires or the file is reloaded, even while the fo
   `auth_basic` as an escape hatch.
 - Legacy hashes (DES, `$apr1$`, `{SHA}`, `$1$`, `$5$`/`$6$`) verify but are never written; opt-in
   `upgrade_hash_on_login` rehashes them to bcrypt the moment a user logs in.
-- Unknown/garbage hashes verify `false` — never panic (covered by the hash-matrix test).
+- Unknown/garbage hashes verify `false`.
 - Basic-passthrough caches successful verifies for 5 min keyed by SHA-256(`user:pass`), cleared on
   file reload (bcrypt-per-request would be unaffordable).
 
@@ -68,7 +68,7 @@ the cache until its 5-min TTL expires or the file is reloaded, even while the fo
 
 Drops the `Secure` flag and shows a persistent warning banner — passwords/sessions then ride plain
 HTTP. Legitimate only on localhost or an encrypted tunnel. **Not** needed behind TLS-terminating
-nginx (the browser judges `Secure` by its own https scheme). See [deployment.md](deployment.md).
+reverse proxy (the browser judges `Secure` by its own https scheme). See [deployment.md](deployment.md).
 
 ## No web bootstrap
 

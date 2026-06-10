@@ -6,7 +6,7 @@ use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 // bcrypt of the password "password" (cost 5) — lets tests seed .htpasswd without hashing.
 const PW_HASH: &str = "$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope";
@@ -137,6 +137,17 @@ fn check_exit(config: &Path, user: &str) -> i32 {
         .unwrap()
 }
 
+/// Force a strictly-later mtime so the server's mtime-based reload fires regardless of the
+/// filesystem's timestamp resolution.
+fn bump_mtime(path: &Path) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(SystemTime::now() + Duration::from_secs(5))
+        .unwrap();
+}
+
 #[test]
 fn login_then_auth_emits_cel_headers() {
     let srv = spawn("[users.admin]\ndisplay_name = \"Administrator\"\nis_admin = true\n");
@@ -228,6 +239,29 @@ fn lockout_after_repeated_failures() {
         body.contains("Too many failed attempts"),
         "expected lockout message, got:\n{body}"
     );
+}
+
+#[test]
+fn basic_lockout_after_repeated_failures() {
+    // The Basic passthrough branch of /auth shares the login form's limiter: repeated wrong
+    // passwords lock the user out, after which even the correct password is refused.
+    let srv = spawn("");
+    let c = reqwest::blocking::Client::new();
+    for _ in 0..6 {
+        let r = c
+            .get(format!("{}/auth", srv.base))
+            .basic_auth("bob", Some("wrong"))
+            .send()
+            .unwrap();
+        assert_eq!(r.status(), 401);
+    }
+    // Correct password, but the lockout is in force ⇒ still 401 (verify is never reached).
+    let r = c
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 401);
 }
 
 #[test]
@@ -457,4 +491,119 @@ fn password_change_invalidates_session() {
         c.get(format!("{}/auth", srv.base)).send().unwrap().status(),
         401
     );
+}
+
+#[test]
+fn sliding_remint_emits_fresh_cookie() {
+    use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
+
+    let srv = spawn("");
+
+    // Negative: a fresh login followed by an immediate /auth must NOT re-mint.
+    let c = client();
+    c.post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+    let r = c.get(format!("{}/auth", srv.base)).send().unwrap();
+    assert_eq!(r.status(), 200);
+    assert!(
+        r.headers().get("set-cookie").is_none(),
+        "a fresh session must not be re-minted"
+    );
+
+    // Positive: hand-mint a token whose iat is 7h old — past half of the default 12h idle window —
+    // so /auth must slide it. session_idle_hours can't be tuned below 1h, so a live wait is
+    // impossible; mint directly with the server's secret instead.
+    let secret = std::fs::read(srv._dir.path().join("state").join("jwt_secret")).unwrap();
+    let now = jsonwebtoken::get_current_timestamp();
+    let orig_iat = now - 2 * 86400; // 2 days ago: distinct from iat, inside the 7-day absolute cap
+    let claims = serde_json::json!({
+        "sub": "bob",
+        "iat": now - 7 * 3600,
+        "exp": now + 5 * 3600, // iat + 12h idle, still in the future
+        "iss": "htwicket",
+        "orig_iat": orig_iat,
+        "factors": ["pw"],
+        // pwd_fp omitted: a token without it is accepted (skips the fingerprint check).
+    });
+    let token = jsonwebtoken::encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(&secret),
+    )
+    .unwrap();
+
+    let r = reqwest::blocking::Client::new()
+        .get(format!("{}/auth", srv.base))
+        .header(reqwest::header::COOKIE, format!("htwicket_session={token}"))
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers().get("x-remote-user-id").unwrap(), "bob");
+    let set = r
+        .headers()
+        .get("set-cookie")
+        .expect("aged session should re-mint a Set-Cookie")
+        .to_str()
+        .unwrap();
+    let fresh = set
+        .split("htwicket_session=")
+        .nth(1)
+        .expect("Set-Cookie is for the session cookie")
+        .split(';')
+        .next()
+        .unwrap();
+
+    // The re-minted token carries a fresh iat but the *original* orig_iat (sliding, not re-login).
+    let mut v = Validation::new(Algorithm::HS256);
+    v.set_issuer(&["htwicket"]);
+    v.validate_aud = false;
+    let data =
+        jsonwebtoken::decode::<serde_json::Value>(fresh, &DecodingKey::from_secret(&secret), &v)
+            .unwrap();
+    assert_eq!(data.claims["orig_iat"].as_u64().unwrap(), orig_iat);
+    assert!(
+        data.claims["iat"].as_u64().unwrap() > now - 7 * 3600,
+        "re-minted iat was not refreshed"
+    );
+}
+
+#[test]
+fn basic_cache_cleared_on_file_reload() {
+    // A successful Basic verify is cached for 5 min. Rewriting the user's hash bumps the file's
+    // mtime, which forces a reload that clears the cache — so the old password must stop working
+    // immediately rather than riding the cache until TTL expiry.
+    let srv = spawn("");
+    let htpasswd = srv._dir.path().join(".htpasswd");
+    let c = reqwest::blocking::Client::new();
+
+    // Prime the cache with a good Basic auth.
+    let r = c
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 200);
+
+    // Rewrite bob's entry to a different password's hash, then bump mtime to guarantee a reload.
+    let other = bcrypt::hash("a-different-password", 5).unwrap();
+    std::fs::write(&htpasswd, format!("admin:{PW_HASH}\nbob:{other}\n")).unwrap();
+    bump_mtime(&htpasswd);
+
+    // The old password is no longer cached and no longer matches ⇒ immediate 401.
+    let r = c
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 401);
+
+    // Sanity: the new password authenticates against the reloaded file.
+    let r = c
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some("a-different-password"))
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 200);
 }

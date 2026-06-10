@@ -28,6 +28,11 @@ http_accept_language = true     # consult the browser's Accept-Language header f
 #                               # above. Note the inner quotes — the value is a CEL expression, so a
 #                               # literal locale is single-quoted. e.g. "'fi'" forces Finnish.
 
+# app_title_html = "<img src=https://example.com/logo.svg alt=ACME height=40>"
+#                               # Optional RAW (unescaped) HTML shown above the form on every page —
+#                               # a logo, title, custom font/colors. Whitelabel branding; trusted
+#                               # operator input by design, so it is NOT escaped. Leave unset for none.
+
 [superadmins]
 # Who may open /admin (htwicket's own user management) — CEL over {username, fields.*}
 expr = "username == 'admin' || fields.is_admin"

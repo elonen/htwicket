@@ -110,9 +110,10 @@ msgstr "用户管理"
 msgid "Rename, set a password, or edit profile fields, then save."
 msgstr "重命名、设置密码或编辑资料字段，然后保存。"
 
+#. TRANSLATORS: user-count badge on the admin page. {count} is replaced with the number.
 #: templates/admin.html:10
-msgid "users"
-msgstr "个用户"
+msgid "{count} users"
+msgstr "{count} 个用户"
 
 #: templates/admin.html:25
 msgid "No users yet"
@@ -168,9 +169,13 @@ msgstr "已启用非安全 Cookie 模式。请仅通过 localhost 或加密隧�
 msgid "Sign in"
 msgstr "登录"
 
-#: templates/logout.html:2 templates/logout.html:5 templates/logout.html:9
+#: templates/logout.html:2 templates/logout.html:9
 msgid "Sign out"
 msgstr "退出登录"
+
+#: templates/logout.html:5
+msgid "Sign out?"
+msgstr "退出登录？"
 
 #: templates/logout.html:6
 msgid "You are signed in as"
@@ -186,3 +191,15 @@ msgstr "来自您网络的尝试次数过多。请等待一分钟后重试。"
 #: src/web/mod.rs:247
 msgid "Too many failed attempts. Try again shortly."
 msgstr "失败次数过多。请稍后再试。"
+
+#: templates/forbidden.html:2 templates/forbidden.html:9
+msgid "Access denied"
+msgstr "拒绝访问"
+
+#: templates/forbidden.html:12
+msgid "You do not have permission to view this page."
+msgstr "您没有权限查看此页面。"
+
+#: templates/forbidden.html:13
+msgid "Back to home"
+msgstr "返回首页"

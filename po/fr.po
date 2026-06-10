@@ -111,9 +111,11 @@ msgstr "Gestion des utilisateurs"
 msgid "Rename, set a password, or edit profile fields, then save."
 msgstr "Renommez, définissez un mot de passe ou modifiez les champs de profil, puis enregistrez."
 
+#. TRANSLATORS: user-count badge on the admin page. {count} is replaced with the number. Use a
+#. form that reads naturally for ANY count; there is only this one form (no separate n=1 string).
 #: templates/admin.html:10
-msgid "users"
-msgstr "utilisateurs"
+msgid "{count} users"
+msgstr "{count} utilisateurs"
 
 #: templates/admin.html:25
 msgid "No users yet"
@@ -169,9 +171,13 @@ msgstr "Le mode cookie non sécurisé est activé. À utiliser uniquement via lo
 msgid "Sign in"
 msgstr "Se connecter"
 
-#: templates/logout.html:2 templates/logout.html:5 templates/logout.html:9
+#: templates/logout.html:2 templates/logout.html:9
 msgid "Sign out"
 msgstr "Se déconnecter"
+
+#: templates/logout.html:5
+msgid "Sign out?"
+msgstr "Se déconnecter ?"
 
 #: templates/logout.html:6
 msgid "You are signed in as"
@@ -187,3 +193,15 @@ msgstr "Trop de tentatives depuis votre réseau. Attendez une minute et réessay
 #: src/web/mod.rs:247
 msgid "Too many failed attempts. Try again shortly."
 msgstr "Trop de tentatives échouées. Réessayez dans un instant."
+
+#: templates/forbidden.html:2 templates/forbidden.html:9
+msgid "Access denied"
+msgstr "Accès refusé"
+
+#: templates/forbidden.html:12
+msgid "You do not have permission to view this page."
+msgstr "Vous n'avez pas l'autorisation de voir cette page."
+
+#: templates/forbidden.html:13
+msgid "Back to home"
+msgstr "Retour à l'accueil"

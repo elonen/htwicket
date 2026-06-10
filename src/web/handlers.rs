@@ -3,9 +3,10 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use askama::Template;
 use axum::extract::{Form, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use crate::authn::{self, Throttle};
@@ -18,7 +19,7 @@ use super::helpers::{
     basic_credentials, client_ip, cookie_header, current_claims, ensure_fresh, lang_of, origin_ok,
     redirect_to_login, render, valid_rd,
 };
-use super::templates::{AccountTemplate, LogoutTemplate};
+use super::templates::{AccountTemplate, ForbiddenTemplate, IndexTemplate, LogoutTemplate};
 use super::views::{
     account_field_views, auth_response_headers, collect_fields, eval_jwt_claims, field_editable,
     is_superadmin, render_admin, render_login,
@@ -88,6 +89,25 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
     // 3) Bare 401 (nginx swallows subrequest body; browsers handled by error_page redirect).
     tracing::debug!(ip = %client_ip(&headers), "auth denied → 401");
     Ok(StatusCode::UNAUTHORIZED.into_response())
+}
+
+/// Landing page at the base-path root (`/`): links to /account and /admin. Public — the linked
+/// pages enforce their own access (account redirects to login; admin shows the 403 page).
+pub(super) async fn index_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
+    let lang = match current_claims(&headers, &state) {
+        Some(claims) => {
+            let db = state.db.read().await;
+            lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub)
+        }
+        None => lang_of(&state, &headers, None, ""),
+    };
+    tracing::debug!("GET index page");
+    render(IndexTemplate {
+        lang,
+        insecure_cookies: state.cfg.insecure_cookies,
+        app_title_html: state.cfg.app_title_html.clone(),
+        base_path: state.cfg.base_path.clone(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -217,6 +237,7 @@ pub(super) async fn logout_page(State(state): State<AppState>, headers: HeaderMa
     render(LogoutTemplate {
         lang,
         insecure_cookies: state.cfg.insecure_cookies,
+        app_title_html: state.cfg.app_title_html.clone(),
         username: claims.sub,
     })
 }
@@ -247,6 +268,8 @@ pub(super) async fn account_page(State(state): State<AppState>, headers: HeaderM
     render(AccountTemplate {
         lang: lang_of(&state, &headers, Some(user), &claims.sub),
         insecure_cookies: state.cfg.insecure_cookies,
+        app_title_html: state.cfg.app_title_html.clone(),
+        base_path: state.cfg.base_path.clone(),
         username: claims.sub.clone(),
         fields: account_field_views(&state, user, &claims.sub),
         error: None,
@@ -348,6 +371,8 @@ pub(super) async fn account_submit(
     render(AccountTemplate {
         lang,
         insecure_cookies: state.cfg.insecure_cookies,
+        app_title_html: state.cfg.app_title_html.clone(),
+        base_path: state.cfg.base_path.clone(),
         username: user,
         fields,
         error,
@@ -369,8 +394,9 @@ pub(super) async fn admin_page(State(state): State<AppState>, headers: HeaderMap
     render_admin(&state, &lang, None, None).await
 }
 
-/// Shared /admin prologue: session claims (else login redirect), fresh DB, superadmin gate
-/// (else 403). Ok carries the verified claims (for the locale context); Err the early-exit response.
+/// Shared /admin prologue: session claims (else login redirect), fresh DB, superadmin gate (else
+/// the custom 403 page). Ok carries the verified claims (for the locale context); Err the
+/// early-exit response.
 async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<Claims, Response> {
     let Some(claims) = current_claims(headers, state) else {
         return Err(redirect_to_login(state, "/admin"));
@@ -380,9 +406,25 @@ async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<Cla
         .map_err(IntoResponse::into_response)?;
     let db = state.db.read().await;
     if !is_superadmin(state, db.users.get(&claims.sub), &claims.sub) {
-        return Err(StatusCode::FORBIDDEN.into_response());
+        let lang = lang_of(state, headers, db.users.get(&claims.sub), &claims.sub);
+        return Err(forbidden_page(state, &lang));
     }
     Ok(claims)
+}
+
+/// The 403 page for a signed-in non-superadmin (a real HTML page, not the bare browser 403).
+fn forbidden_page(state: &AppState, lang: &str) -> Response {
+    let body = ForbiddenTemplate {
+        lang: lang.to_string(),
+        insecure_cookies: state.cfg.insecure_cookies,
+        app_title_html: state.cfg.app_title_html.clone(),
+        base_path: state.cfg.base_path.clone(),
+    }
+    .render();
+    match body {
+        Ok(html) => (StatusCode::FORBIDDEN, Html(html)).into_response(),
+        Err(e) => AppError(e.into()).into_response(),
+    }
 }
 
 /// Superadmins only. Actions: `save` (batch edit/rename + set passwords across all rows),

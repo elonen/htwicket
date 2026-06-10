@@ -61,7 +61,8 @@ $(POT): $(I18N_SOURCES)
 	@# warnings — harmless (extraction is correct). Drop just those lines, keep every other
 	@# warning, and preserve xgettext's exit code.
 	@xgettext --language=C --from-code=UTF-8 --sort-by-file \
-		--keyword=tr:1 --keyword=tr:2 \
+		--keyword=tr:1 --keyword=tr:2 --keyword=tr_count:1 \
+		--add-comments=TRANSLATORS: \
 		--package-name=htwicket --copyright-holder="htwicket authors" \
 		-o $@ $(I18N_SOURCES) 2>$@.err; rc=$$?; \
 		grep -vE 'warning: unterminated (string literal|character constant)' $@.err >&2 || true; \

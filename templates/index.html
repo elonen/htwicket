@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}htwicket{% endblock %}
+{% block content %}
+<section class="card">
+  <nav class="index-links">
+    <a class="btn btn-block" href="{{ base_path }}/account">{{ tr("My account") }}</a>
+    <a class="btn btn-secondary btn-block" href="{{ base_path }}/admin">{{ tr("User management") }}</a>
+  </nav>
+</section>
+{% endblock %}

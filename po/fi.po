@@ -110,9 +110,12 @@ msgstr "Käyttäjätilien hallinta"
 msgid "Rename, set a password, or edit profile fields, then save."
 msgstr "Nimeä uudelleen, aseta salasana tai muokkaa profiilikenttiä. Lopuksi tallenna."
 
+#. TRANSLATORS: user-count badge on the admin page. {count} is replaced with the number. Use a
+#. form that reads naturally for ANY count — Finnish takes the partitive ("käyttäjää"), not the
+#. nominative plural ("käyttäjät"). There is only this one form (no separate n=1 string).
 #: templates/admin.html:10
-msgid "users"
-msgstr "käyttäjät"
+msgid "{count} users"
+msgstr "{count} käyttäjää"
 
 #: templates/admin.html:25
 msgid "No users yet"
@@ -168,9 +171,13 @@ msgstr "Insecure-cookie-tila on käytössä. Käytä vain localhostin kautta tai
 msgid "Sign in"
 msgstr "Kirjaudu sisään"
 
-#: templates/logout.html:2 templates/logout.html:5 templates/logout.html:9
+#: templates/logout.html:2 templates/logout.html:9
 msgid "Sign out"
 msgstr "Kirjaudu ulos"
+
+#: templates/logout.html:5
+msgid "Sign out?"
+msgstr "Kirjaudu ulos?"
 
 #: templates/logout.html:6
 msgid "You are signed in as"
@@ -187,3 +194,15 @@ msgstr "Liian monta yritystä verkostasi. Odota hetki ja yritä uudelleen."
 #: src/web/mod.rs:247
 msgid "Too many failed attempts. Try again shortly."
 msgstr "Liian monta epäonnistunutta yritystä. Yritä hetken kuluttua uudelleen."
+
+#: templates/forbidden.html:2 templates/forbidden.html:9
+msgid "Access denied"
+msgstr "Pääsy estetty"
+
+#: templates/forbidden.html:12
+msgid "You do not have permission to view this page."
+msgstr "Sinulla ei ole oikeutta nähdä tätä sivua."
+
+#: templates/forbidden.html:13
+msgid "Back to home"
+msgstr "Takaisin etusivulle"

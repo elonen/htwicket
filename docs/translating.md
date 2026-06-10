@@ -48,3 +48,14 @@ make i18n-update    # re-extract, then msgmerge into every po/*.po
 - Keep `msgid`s ASCII and whole sentences — no concatenation, no markup inside the string.
   Translations carry the Unicode.
 - Strings are `tr("…")` in templates and `tr(lang, "…")` in Rust; both are extracted automatically.
+
+## Counts and translator notes
+
+- A count is one string with a `{count}` placeholder, looked up via `tr_count("{count} users", n)`;
+  the number is substituted after translation. There is a **single** plural form (no separate n=1
+  string), so translate it to read naturally for any count — e.g. Finnish uses the partitive
+  `"{count} käyttäjää"`, never the nominative plural `"{count} käyttäjät"`.
+- Leave guidance for translators as a `#.` **TRANSLATORS:** comment directly above the entry in the
+  `.po` (see `"{count} users"` in `po/fi.po`). These comments are preserved and ignored at compile.
+  `xgettext` only auto-extracts `TRANSLATORS:` comments from Rust source (C-style `//`), **not** from
+  Askama `{# … #}` template comments — so for a template string, add the note in the `.po` by hand.

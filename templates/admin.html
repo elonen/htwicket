@@ -7,7 +7,10 @@
     <h1>{{ tr("User management") }}</h1>
     <p class="lede" style="margin:0">{{ tr("Rename, set a password, or edit profile fields, then save.") }}</p>
   </div>
-  <span class="count">{{ users.len() }} {{ tr("users") }}</span>
+  <div class="toolbar-end">
+    <span class="count">{{ tr_count("{count} users", users.len()) }}</span>
+    <a class="btn btn-secondary btn-sm" href="{{ base_path }}/logout">{{ tr("Sign out") }}</a>
+  </div>
 </div>
 
 {% if let Some(error) = error %}
@@ -88,4 +91,9 @@
     <button type="submit" name="action" value="add">{{ tr("Add user") }}</button>
   </fieldset>
 </form>
+{% endblock %}
+{% block footer %}
+<footer class="foot">
+  <span class="mono">htwicket</span><span class="dot">·</span><span>v{{ version() }}</span>
+</footer>
 {% endblock %}

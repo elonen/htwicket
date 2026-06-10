@@ -11,6 +11,13 @@ pub fn tr(locale: &str, msgid: &str) -> String {
     lookup(CATALOGS, locale, msgid).unwrap_or_else(|| msgid.to_string())
 }
 
+/// Translate a `{count}`-templated `msgid` and substitute the number. Single plural form: the
+/// translation must read naturally for any count (e.g. Finnish partitive "käyttäjää"), so there is
+/// no n=1 special case — see the TRANSLATORS note on the string in the .po files.
+pub fn tr_count(locale: &str, msgid: &str, count: usize) -> String {
+    tr(locale, msgid).replace("{count}", &count.to_string())
+}
+
 /// The browser's most-preferred locale we actually have a catalog for: primary subtags only,
 /// q-values ignored (header order is preference enough). `None` when there's no header or no
 /// match — the caller (`lang_of`) decides the fallback.

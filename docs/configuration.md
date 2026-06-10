@@ -45,6 +45,7 @@ Defaults in parentheses. See the example for inline guidance.
 | `session_max_days` (`7`) | absolute session cap |
 | `http_accept_language` (`true`) | consult the browser's `Accept-Language` for the UI locale, matched against the compiled `po/` catalogs; set `false` to ignore it and always use `default_lang` |
 | `default_lang` (`'en'`) | CEL **string** over `{username, fields.*}`: the fallback locale when `Accept-Language` has no match or is off. The value is a CEL expr, so a literal locale is inner-quoted (`"'fi'"`). Compiled by `serve` like the other exprs; evaluated with empty `username`/`fields` on pre-login pages (so user-dependent exprs fall back to English there) |
+| `app_title_html` (unset) | optional **raw, unescaped** HTML rendered above the form on every page (logo / custom title / colors). Whitelabel branding — trusted operator input, intentionally not escaped |
 
 ## Fields, headers, claims
 

@@ -8,18 +8,17 @@ use common::{PW, client, spawn};
 #[test]
 fn admin_gate_and_add_user() {
     let srv = spawn("");
-    // bob is not a superadmin => 403 on /admin.
+    // bob is not a superadmin => custom 403 page on /admin (not the bare browser 403).
     let cb = client();
     cb.post(format!("{}/login", srv.base))
         .form(&[("username", "bob"), ("password", PW)])
         .send()
         .unwrap();
-    assert_eq!(
-        cb.get(format!("{}/admin", srv.base))
-            .send()
-            .unwrap()
-            .status(),
-        403
+    let denied = cb.get(format!("{}/admin", srv.base)).send().unwrap();
+    assert_eq!(denied.status(), 403);
+    assert!(
+        denied.text().unwrap().contains("Access denied"),
+        "non-admin should get the custom 403 page"
     );
 
     // admin can open /admin and add a user.

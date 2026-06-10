@@ -9,18 +9,17 @@
 </head>
 <body>
   <main class="container{% block container_mod %}{% endblock %}">
+    {% if let Some(title) = app_title_html %}<div class="app-title">{{ title|safe }}</div>{% endif %}
+    {% block content %}{% endblock %}
     {% if insecure_cookies %}
-    <div class="alert alert--warn" role="alert">
+    <div class="alert alert--warn alert--foot" role="alert">
       <span class="alert-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 1.7 21h20.6L12 3Z"></path><path d="M12 10v5"></path><path d="M12 18v.4"></path></svg>
       </span>
       <p>{{ tr("Insecure-cookie mode is enabled. Use only via localhost or an encrypted tunnel (VPN); otherwise passwords and sessions are exposed.") }}</p>
     </div>
     {% endif %}
-    {% block content %}{% endblock %}
   </main>
-  <footer class="foot">
-    <span class="mono">htwicket</span><span class="dot">·</span><span>v{{ version() }}</span>
-  </footer>
+  {% block footer %}{% endblock %}
 </body>
 </html>

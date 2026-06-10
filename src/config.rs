@@ -55,6 +55,10 @@ pub struct Config {
     /// catalog match (or http_accept_language is off). Empty username/fields on pre-login pages.
     #[serde(default = "d_default_lang")]
     pub default_lang: String,
+    /// Raw (unescaped) HTML rendered above the form on every page — a logo, custom title, colors.
+    /// Whitelabel branding; trusted operator input, intentionally not escaped.
+    #[serde(default)]
+    pub app_title_html: Option<String>,
     pub superadmins: Superadmins,
     /// App-specific user attribute schema; htwicket core is app-agnostic.
     #[serde(default)]
@@ -194,6 +198,10 @@ pub struct Overrides {
     #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_lang: Option<String>,
+    /// Raw HTML shown above the form on every page (branding/whitelabel)
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_title_html: Option<String>,
 }
 
 pub fn load(path: &Path, cli: &Overrides) -> anyhow::Result<Config> {

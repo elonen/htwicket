@@ -110,20 +110,25 @@ fn compile_all(cfg: &Config) -> anyhow::Result<CompiledExpressions> {
 
 fn router(base_path: &str, state: AppState) -> Router {
     use handlers::{
-        account_page, account_submit, admin_page, admin_submit, auth, login_page, login_submit,
-        logout_page, logout_submit,
+        account_page, account_submit, admin_page, admin_submit, auth, index_page, login_page,
+        login_submit, logout_page, logout_submit,
     };
-    Router::new().nest(
-        base_path,
-        Router::new()
-            .route("/auth", get(auth))
-            .route("/login", get(login_page).post(login_submit))
-            .route("/logout", get(logout_page).post(logout_submit))
-            .route("/account", get(account_page).post(account_submit))
-            .route("/admin", get(admin_page).post(admin_submit))
-            .route("/healthz", get(|| async { "ok" }))
-            .with_state(state),
-    )
+    let inner = Router::new()
+        // axum's nested "/" matches the base path WITHOUT a trailing slash (`/htwicket`). The slash
+        // variant (`/htwicket/`) is served by the explicit outer route below — both render the index
+        // directly, with no redirect (a redirect would ping-pong against a directory-style reverse
+        // proxy that re-adds the trailing slash → ERR_TOO_MANY_REDIRECTS).
+        .route("/", get(index_page))
+        .route("/auth", get(auth))
+        .route("/login", get(login_page).post(login_submit))
+        .route("/logout", get(logout_page).post(logout_submit))
+        .route("/account", get(account_page).post(account_submit))
+        .route("/admin", get(admin_page).post(admin_submit))
+        .route("/healthz", get(|| async { "ok" }));
+    Router::new()
+        .route(&format!("{base_path}/"), get(index_page))
+        .nest(base_path, inner)
+        .with_state(state)
 }
 
 // ---- Error glue: handlers return Result<Response, AppError>; AppError => 500 + log. ----

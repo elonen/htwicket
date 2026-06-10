@@ -2,7 +2,6 @@
 {% block title %}{{ tr("Sign in") }}{% endblock %}
 {% block content %}
 <section class="card">
-  <h1>{{ tr("Sign in") }}</h1>
   {% if let Some(error) = error %}
   <div class="alert alert--error" role="alert">
     <span class="alert-icon" aria-hidden="true">
@@ -11,15 +10,13 @@
     <p>{{ error }}</p>
   </div>
   {% endif %}
-  <form method="post">
+  <form method="post" class="field-stack">
     <input type="hidden" name="rd" value="{{ rd }}">
-    <label for="username">{{ tr("Username") }}
-      <input id="username" name="username" value="{{ username }}" autocomplete="username"
-             autocapitalize="none" spellcheck="false"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
-    </label>
-    <label for="password">{{ tr("Password") }}
-      <input id="password" type="password" name="password" autocomplete="current-password"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
-    </label>
+    <input id="username" name="username" value="{{ username }}" placeholder="{{ tr("Username") }}"
+           aria-label="{{ tr("Username") }}" autocomplete="username" autocapitalize="none"
+           spellcheck="false"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
+    <input id="password" type="password" name="password" placeholder="{{ tr("Password") }}"
+           aria-label="{{ tr("Password") }}" autocomplete="current-password"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
     <button type="submit" class="btn-block">{{ tr("Sign in") }}</button>
   </form>
 </section>

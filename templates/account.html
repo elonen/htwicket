@@ -2,7 +2,10 @@
 {% block title %}{{ tr("My account") }}{% endblock %}
 {% block content %}
 <section class="card">
-  <h1>{{ tr("My account") }} <span class="sub">— {{ username }}</span></h1>
+  <div class="toolbar">
+    <h1 style="margin:0">{{ tr("My account") }} <span class="sub">— {{ username }}</span></h1>
+    <a class="btn btn-secondary btn-sm" href="{{ base_path }}/logout">{{ tr("Sign out") }}</a>
+  </div>
   {% if let Some(error) = error %}
   <div class="alert alert--error" role="alert">
     <span class="alert-icon" aria-hidden="true">

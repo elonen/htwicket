@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ tr("Access denied") }}{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="alert alert--error" role="alert">
+    <span class="alert-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6"></path><path d="M12 16.5v.5"></path></svg>
+    </span>
+    <p><b>{{ tr("Access denied") }}</b></p>
+  </div>
+  <p class="lede">{{ tr("You do not have permission to view this page.") }}</p>
+  <a class="btn btn-secondary" href="{{ base_path }}/">{{ tr("Back to home") }}</a>
+</section>
+{% endblock %}

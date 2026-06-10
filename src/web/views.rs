@@ -33,6 +33,8 @@ pub(super) async fn render_admin(
     render(AdminTemplate {
         lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
+        app_title_html: state.cfg.app_title_html.clone(),
+        base_path: state.cfg.base_path.clone(),
         users,
         error,
         notice,
@@ -50,6 +52,7 @@ pub(super) fn render_login(
     render(LoginTemplate {
         lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
+        app_title_html: state.cfg.app_title_html.clone(),
         error,
         rd,
         username,

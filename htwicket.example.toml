@@ -1,0 +1,48 @@
+# htwicket example config. Copy to /etc/htwicket.toml.
+# Every key can be overridden by env: HTWICKET_LISTEN, HTWICKET_SUPERADMINS__EXPR, ...
+
+listen = "127.0.0.1:8088"
+base_path = "/htwicket"
+htpasswd_file = "/var/www/.htpasswd"
+# sidecar_file = "/var/www/.htwicket.toml"   # default: next to htpasswd_file
+# state_dir = "/var/lib/htwicket"            # holds auto-generated jwt_secret
+# jwt_secret = "..."                         # set explicitly for multi-instance / key control
+
+insecure_cookies = false        # true only behind plain http (demo); drops Secure flag
+basic_auth_passthrough = false  # true = accept Authorization: Basic on /auth (legacy scripts)
+# upgrade_hash_on_login = false # rehash DES/apr1 entries to bcrypt at successful login
+min_password_len = 8
+session_hours = 12              # sliding re-mint past half-life
+session_max_days = 7            # absolute session cap
+
+[superadmins]
+# Who may open /admin (htwicket's own user management) — CEL over {username, fields.*}
+expr = "username == 'admin' || fields.is_admin"
+
+# ---- App-specific schema below (example); htwicket core has no built-in notion ----
+# ---- of any of these fields.                                                    ----
+
+[fields.display_name]
+type = "string"
+default = ""
+user_editable = true
+
+[fields.is_admin]
+type = "bool"
+default = false
+
+[fields.can_upload]
+type = "bool"
+default = true
+
+[headers.X-Remote-User-Name]
+type = "string"
+expr = "fields.display_name != '' ? fields.display_name : username"
+
+[headers.X-Remote-User-Is-Admin]
+type = "bool"
+expr = "fields.is_admin"
+
+[headers.X-Remote-User-Can-Upload]
+type = "bool"
+expr = "fields.can_upload"

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}htwicket{% endblock %} — {{ app_title }}</title>
+  <style>{# embedded pico.css (classless) goes here via include_str #}</style>
+</head>
+<body>
+  <main class="container">
+    {% if insecure_cookies %}
+    <p role="alert">{{ tr("Insecure-cookie mode is enabled. Use only via localhost or an encrypted tunnel (VPN) — otherwise passwords and sessions are exposed.") }}</p>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

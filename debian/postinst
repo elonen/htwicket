@@ -1,0 +1,12 @@
+#!/bin/sh
+# The service runs as www-data (already present on Debian) and systemd owns the
+# state directory (StateDirectory=htwicket), so there's nothing to provision —
+# just point the admin at the configure-then-start step on a fresh install.
+set -e
+
+if [ "$1" = "configure" ] && [ -z "$2" ]; then
+    echo "htwicket: edit /etc/htwicket.toml and add a user, then start with:" >&2
+    echo "          systemctl enable --now htwicket" >&2
+fi
+
+#DEBHELPER#

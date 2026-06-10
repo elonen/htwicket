@@ -1,0 +1,5 @@
+target/
+dist_deb/
+.git/
+.github/
+.local-tmp/

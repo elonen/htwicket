@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ tr("My account") }}{% endblock %}
+{% block content %}
+<h1>{{ tr("My account") }} — {{ username }}</h1>
+{# user_editable fields rendered by type: bool=checkbox, email=type=email, string=text;
+   non-editable fields shown read-only #}
+<form method="post">
+  {% block fields %}{% endblock %}
+  <fieldset>
+    <legend>{{ tr("Change password") }}</legend>
+    <label>{{ tr("Current password") }} <input type="password" name="old_password" autocomplete="current-password"></label>
+    <label>{{ tr("New password") }} <input type="password" name="new_password" autocomplete="new-password"></label>
+  </fieldset>
+  <button type="submit">{{ tr("Save") }}</button>
+</form>
+{% endblock %}

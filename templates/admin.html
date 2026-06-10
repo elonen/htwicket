@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ tr("User management") }}{% endblock %}
+{% block content %}
+<h1>{{ tr("User management") }}</h1>
+{# table: username + one column per schema field (rendered by type), actions:
+   set password / delete. Below: add-user form. No pagination (htadmin scale). #}
+{% block users %}{% endblock %}
+{% endblock %}

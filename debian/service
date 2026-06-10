@@ -1,0 +1,21 @@
+[Unit]
+Description=htwicket auth gateway for nginx auth_request
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+ExecStart=/usr/bin/htwicket --config /etc/htwicket.toml serve
+Restart=on-failure
+RestartSec=2
+
+# /var/lib/htwicket, owned by www-data — holds the auto-generated jwt_secret.
+# Matches the default `state_dir` in /etc/htwicket.toml.
+StateDirectory=htwicket
+StateDirectoryMode=0700
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

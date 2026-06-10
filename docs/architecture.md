@@ -9,7 +9,7 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 | concern | crate |
 |---|---|
 | HTTP | `axum` + `tokio` |
-| config (TOML → env) | `figment` + `clap` |
+| config (TOML → env → CLI) | `figment` + `clap` |
 | templates / styling | `askama` (server-rendered HTML, one inlined CSS, no JS) |
 | session cookie | `jsonwebtoken` — JWT, HS256 **pinned** (`rust_crypto`, no C deps) |
 | CEL expressions | `cel-interpreter` |

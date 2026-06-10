@@ -58,5 +58,7 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
 [dev-dependencies]
+# Jail for config-layering tests.
+figment = { version = "0.10.19", features = ["test"] }
 # http-only integration tests; no TLS backend so the dev build stays free of openssl/native-tls.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies"] }

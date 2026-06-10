@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use figment::Figment;
-use figment::providers::{Env, Format, Toml};
-use serde::Deserialize;
+use figment::providers::{Env, Format, Serialized, Toml};
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -93,10 +93,64 @@ pub struct ExprSpec {
     pub expr: String,
 }
 
-pub fn load(path: &Path) -> anyhow::Result<Config> {
+/// Per-key CLI overrides — the topmost layer, for the scalar top-level keys only. The tables
+/// (`[superadmins]`, `[fields.*]`, ...) are structured config, not deploy-time knobs: file/env
+/// only. `jwt_secret` is deliberately absent too — argv is visible in `ps`, use
+/// `HTWICKET_JWT_SECRET`. Bool flags: presence = true, `--flag=false` to force off.
+#[derive(clap::Args, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub struct Overrides {
+    /// Bind address
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listen: Option<String>,
+    /// URL prefix all routes are served under
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_path: Option<String>,
+    /// Password file
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub htpasswd_file: Option<PathBuf>,
+    /// Fields file (default: .htwicket.toml next to htpasswd file)
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sidecar_file: Option<PathBuf>,
+    /// Holds the auto-generated jwt_secret
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state_dir: Option<PathBuf>,
+    /// Drop the cookie Secure flag (plain-http demo only)
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insecure_cookies: Option<bool>,
+    /// Accept Authorization: Basic on /auth
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub basic_auth_passthrough: Option<bool>,
+    /// Rehash legacy entries to bcrypt on successful login
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upgrade_hash_on_login: Option<bool>,
+    /// Minimum password length
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_password_len: Option<usize>,
+    /// JWT idle expiry; sliding re-mint past half-life
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_idle_hours: Option<u32>,
+    /// Absolute session cap
+    #[arg(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_max_days: Option<u32>,
+}
+
+pub fn load(path: &Path, cli: &Overrides) -> anyhow::Result<Config> {
     let cfg: Config = Figment::new()
         .merge(Toml::file(path))
         .merge(Env::prefixed("HTWICKET_").split("__"))
+        .merge(Serialized::defaults(cli))
         .extract()?;
     validate(&cfg)?;
     // CEL exprs are compiled by `serve` (crate::web), not here: the offline `user` subcommands
@@ -180,6 +234,75 @@ mod tests {
             "{REQUIRED}{SUPERADMINS}[fields.\"x-y\"]\ntype = \"string\"\n"
         ));
         assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn layering_file_env_cli() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "htwicket.toml",
+                r#"
+                    listen = "file"
+                    base_path = "/file"
+                    htpasswd_file = "/file/.htpasswd"
+                    sidecar_file = "/file/.sidecar"
+                    state_dir = "/file/state"
+                    insecure_cookies = false
+                    basic_auth_passthrough = false
+                    upgrade_hash_on_login = false
+                    min_password_len = 1
+                    session_idle_hours = 1
+                    session_max_days = 1
+                    [superadmins]
+                    expr = "false"
+                "#,
+            )?;
+            jail.set_env("HTWICKET_LISTEN", "env");
+            jail.set_env("HTWICKET_BASE_PATH", "/env");
+            let cli = Overrides {
+                listen: Some("cli".into()),
+                htpasswd_file: Some("/cli/.htpasswd".into()),
+                sidecar_file: Some("/cli/.sidecar".into()),
+                state_dir: Some("/cli/state".into()),
+                insecure_cookies: Some(true),
+                basic_auth_passthrough: Some(true),
+                upgrade_hash_on_login: Some(true),
+                min_password_len: Some(3),
+                session_idle_hours: Some(3),
+                session_max_days: Some(3),
+                ..Overrides::default()
+            };
+            let cfg = load(Path::new("htwicket.toml"), &cli)
+                .map_err(|e| figment::Error::from(e.to_string()))?;
+            assert_eq!(cfg.listen, "cli"); // CLI beats env beats file
+            assert_eq!(cfg.base_path, "/env"); // env beats file (no CLI override given)
+            assert_eq!(cfg.htpasswd_file, PathBuf::from("/cli/.htpasswd"));
+            assert_eq!(cfg.sidecar_file, Some(PathBuf::from("/cli/.sidecar")));
+            assert_eq!(cfg.state_dir, PathBuf::from("/cli/state"));
+            assert!(cfg.insecure_cookies);
+            assert!(cfg.basic_auth_passthrough);
+            assert!(cfg.upgrade_hash_on_login);
+            assert_eq!(cfg.min_password_len, 3);
+            assert_eq!(cfg.session_idle_hours, 3);
+            assert_eq!(cfg.session_max_days, 3);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn unset_keys_keep_defaults() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "htwicket.toml",
+                "htpasswd_file = \"/tmp/.htpasswd\"\n[superadmins]\nexpr = \"false\"\n",
+            )?;
+            let cfg = load(Path::new("htwicket.toml"), &Overrides::default())
+                .map_err(|e| figment::Error::from(e.to_string()))?;
+            assert_eq!(cfg.listen, d_listen());
+            assert_eq!(cfg.session_max_days, d_session_max_days());
+            assert!(!cfg.insecure_cookies);
+            Ok(())
+        });
     }
 
     #[test]

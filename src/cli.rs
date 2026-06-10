@@ -18,6 +18,9 @@ pub struct Cli {
     /// Config file path
     #[arg(short, long, default_value = "/etc/htwicket.toml")]
     pub config: std::path::PathBuf,
+    /// Per-key overrides on top of file + env (docs/configuration.md#layering)
+    #[command(flatten)]
+    pub overrides: crate::config::Overrides,
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -59,7 +62,7 @@ pub enum UserAction {
 
 pub fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let cfg = crate::config::load(&cli.config)?;
+    let cfg = crate::config::load(&cli.config, &cli.overrides)?;
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => crate::web::serve(cfg),
         Command::User { action } => run_user(cfg, action),
@@ -119,6 +122,23 @@ fn run_user(cfg: Config, action: UserAction) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bool_flags_distinguish_unset_true_false() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+        let cli = Cli::parse_from(["htwicket", "--insecure-cookies", "serve"]);
+        assert_eq!(cli.overrides.insecure_cookies, Some(true));
+        let cli = Cli::parse_from(["htwicket", "--insecure-cookies=false"]);
+        assert_eq!(cli.overrides.insecure_cookies, Some(false));
+        let cli = Cli::parse_from(["htwicket"]);
+        assert_eq!(cli.overrides.insecure_cookies, None);
+    }
 }
 
 fn require_valid(name: &str) -> anyhow::Result<()> {

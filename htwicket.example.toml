@@ -1,5 +1,6 @@
 # htwicket example config. Copy to /etc/htwicket.toml.
 # Every key can be overridden by env: HTWICKET_LISTEN, HTWICKET_SUPERADMINS__EXPR, ...
+# Scalar top-level keys also by CLI flags (highest precedence): --listen, --min-password-len, ...
 
 listen = "127.0.0.1:52155"
 base_path = "/htwicket"

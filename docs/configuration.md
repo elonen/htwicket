@@ -6,11 +6,17 @@ behind it.
 
 ## Layering
 
-`Config` is assembled (`src/config.rs`) as **TOML file → env override → built-in defaults**:
+`Config` is assembled (`src/config.rs`) as **TOML file → env override → CLI flags**, with
+built-in defaults filling anything no layer sets:
 
 - File: `--config <path>` (default `/etc/htwicket.toml`).
 - Env: `HTWICKET_` prefix, `__` for nesting — e.g. `HTWICKET_LISTEN`,
   `HTWICKET_SUPERADMINS__EXPR`, `HTWICKET_SESSION_IDLE_HOURS`.
+- CLI: one `--flag` per scalar top-level key (`--listen`, `--min-password-len`, ...; see
+  `htwicket --help`), highest precedence — handy for `docker run` one-liners and entrypoint
+  scripts. Bool flags: presence means `true`, `--insecure-cookies=false` forces off. The
+  tables (`[superadmins]`, `[fields.*]`, `[headers.*]`, `[jwt-claims.*]`) are file/env-only,
+  and so is `jwt_secret` — argv is visible in `ps`, use `HTWICKET_JWT_SECRET` instead.
 
 Everything is validated at startup — an unknown key, a bad `base_path`, a malformed CEL expression,
 or a default that doesn't match its field type is a **loud startup failure**.

@@ -18,9 +18,11 @@ pub fn tr_count(locale: &str, msgid: &str, count: usize) -> String {
     tr(locale, msgid).replace("{count}", &count.to_string())
 }
 
-/// The browser's most-preferred locale we actually have a catalog for: primary subtags only,
-/// q-values ignored (header order is preference enough). `None` when there's no header or no
-/// match — the caller (`lang_of`) decides the fallback.
+/// The browser's most-preferred UI locale we can serve: the first primary subtag (in header order,
+/// q-values ignored) matching a compiled catalog OR `en`, the source language. `en` must count as
+/// serveable even though it has no catalog — otherwise the walk skips a higher-priority English
+/// entry and matches a lower-priority translation (e.g. `en-GB,en;q=0.9,fi;q=0.8` → wrongly `fi`).
+/// `None` when there's no header or nothing serveable — the caller (`lang_of`) decides the fallback.
 pub fn best_locale(accept_language: Option<&str>) -> Option<String> {
     let header = accept_language?;
     for item in header.split(',') {
@@ -33,7 +35,9 @@ pub fn best_locale(accept_language: Option<&str>) -> Option<String> {
             .next()
             .unwrap_or("")
             .to_ascii_lowercase();
-        if !primary.is_empty() && CATALOGS.iter().any(|(loc, _)| *loc == primary) {
+        if !primary.is_empty()
+            && (primary == "en" || CATALOGS.iter().any(|(loc, _)| *loc == primary))
+        {
             return Some(primary);
         }
     }
@@ -65,11 +69,17 @@ mod tests {
     }
 
     #[test]
-    fn best_locale_matches_only_compiled_catalogs() {
-        // Negotiation returns a locale only when a compiled catalog (fi/fr/zh) matches; None
-        // otherwise, leaving the fallback to the caller.
+    fn best_locale_matches_catalog_or_english_source() {
+        // Negotiation returns a locale for a compiled catalog (fi/fr/zh) or English (the source);
+        // None otherwise, leaving the fallback to the caller.
         assert_eq!(best_locale(None), None);
         assert_eq!(best_locale(Some("de-DE,de;q=0.9")), None);
         assert_eq!(best_locale(Some("fi-FI,fi;q=0.9")).as_deref(), Some("fi"));
+        // English is serveable (source language), so a higher-priority "en" beats a lower-priority
+        // translated catalog instead of being skipped over.
+        assert_eq!(
+            best_locale(Some("en-GB,en;q=0.9,fi;q=0.8,en-US;q=0.7")).as_deref(),
+            Some("en")
+        );
     }
 }

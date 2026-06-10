@@ -42,7 +42,8 @@ RUN chmod +x /usr/local/bin/demo-entrypoint.sh
 ENV HTWICKET_INSECURE_COOKIES=true \
     HTWICKET_BASIC_AUTH_PASSTHROUGH=true \
     HTWICKET_MIN_PASSWORD_LEN=4 \
-    HTWICKET_DEBUG=true
+    HTWICKET_DEBUG=true \
+    HTWICKET_APP_TITLE_HTML="<h1>Example App</h1>"
 
 EXPOSE 80
 CMD ["/usr/local/bin/demo-entrypoint.sh"]

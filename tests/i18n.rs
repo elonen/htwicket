@@ -43,6 +43,28 @@ fn login_locale_follows_accept_language() {
 }
 
 #[test]
+fn higher_priority_english_beats_lower_priority_catalog() {
+    // A real browser header where English (source, no catalog) outranks Finnish must render
+    // English — not fall through to the lower-q Finnish catalog.
+    let srv = spawn("");
+    let page = reqwest::blocking::Client::new()
+        .get(format!("{}/login", srv.base))
+        .header(
+            reqwest::header::ACCEPT_LANGUAGE,
+            "en-GB,en;q=0.9,fi;q=0.8,en-US;q=0.7",
+        )
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(page.contains(r#"lang="en""#), "expected English:\n{page}");
+    assert!(
+        !page.contains("Kirjaudu sisään"),
+        "should not render Finnish:\n{page}"
+    );
+}
+
+#[test]
 fn default_lang_used_when_accept_language_disabled() {
     // http_accept_language=false ignores the header entirely; default_lang ('fi') is the locale
     // even for an English-only browser.

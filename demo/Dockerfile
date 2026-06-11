@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # demo/Dockerfile — self-contained playground for htwicket.
 #
 # Build context is the REPO ROOT (it compiles the crate), so build from there:
@@ -6,19 +7,21 @@
 #   docker run --rm -p 8080:80 htwicket-demo
 #   open http://localhost:8080/        # redirected to login; sign in as admin / admin
 #
-# Runs the daemon behind nginx (auth_request) protecting a tiny PHP page that dumps the
-# headers nginx forwarded *and* the decoded session-JWT claims — so you can watch the
-# [headers.*] and JWT channels light up as you log in. Supporting files live in demo/;
-# the config is the shipped htwicket.example.toml verbatim (demo-only knobs are env vars
-# below, so there is no second TOML to drift).
-#
 # Plain-http demo only (insecure_cookies, basic_auth_passthrough). NOT a production layout.
 
-# ---- build the binary (pure Rust, no native deps; same toolchain as Dockerfile.deb) ----
 FROM rust:1-slim-trixie AS builder
 WORKDIR /app
-COPY . /app
-RUN cargo build --release
+
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY po ./po
+COPY templates ./templates
+COPY src ./src
+
+RUN --mount=type=cache,id=htwicket-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=htwicket-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=htwicket-demo-target,target=/app/target \
+    cargo build --release && cp target/release/htwicket /usr/bin/htwicket
+
 
 # ---- runtime: nginx + php + htwicket on trixie-slim ----
 FROM debian:trixie-slim
@@ -28,7 +31,7 @@ RUN apt-get -qy update \
  && rm -rf /var/lib/apt/lists/* \
  && rm -f /etc/nginx/sites-enabled/default
 
-COPY --from=builder /app/target/release/htwicket /usr/bin/htwicket
+COPY --from=builder /usr/bin/htwicket /usr/bin/htwicket
 COPY htwicket.example.toml      /etc/htwicket.toml
 COPY demo/nginx-default.conf    /etc/nginx/conf.d/default.conf
 COPY demo/app/                  /var/www/app/

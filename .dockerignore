@@ -1,5 +1,15 @@
+# Build outputs & local caches — never an input.
 target/
 dist_deb/
+.local-tmp/
+
+# VCS / CI / editor / tooling metadata.
 .git/
 .github/
-.local-tmp/
+.gitignore
+.dockerignore
+**/.DS_Store
+po/*.pot
+
+# Demo docs (the image needs demo/'s configs + app, not its README).
+demo/README.md

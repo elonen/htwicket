@@ -174,3 +174,54 @@ fn sliding_remint_emits_fresh_cookie() {
         "re-minted iat was not refreshed"
     );
 }
+
+#[test]
+fn bad_cookie_does_not_fall_through_to_basic() {
+    // A present-but-invalid session cookie must fail closed: /auth returns 401 and does NOT fall back
+    // to Basic, so a forged/stale cookie can't ride along on a Basic-authorized 200 (where a backend
+    // reading the cookie would trust it).
+    let srv = spawn("");
+    let c = reqwest::blocking::Client::new();
+    let r = c
+        .get(format!("{}/auth", srv.base))
+        .header(
+            reqwest::header::COOKIE,
+            "htwicket_session=not.a.valid.token",
+        )
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 401, "bad cookie must not fall through to Basic");
+
+    // Sanity: the same Basic creds with no cookie still authenticate.
+    let r = c
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        200,
+        "Basic alone (no cookie) still authenticates"
+    );
+}
+
+#[test]
+fn failed_login_latency_floored() {
+    // An unknown user does no bcrypt; without a floor it would answer much faster than a wrong
+    // password, leaking which usernames exist. The failure path sleeps up to a 200ms floor.
+    let srv = spawn("");
+    let c = client();
+    let start = std::time::Instant::now();
+    let r = c
+        .post(format!("{}/login", srv.base))
+        .form(&[("username", "ghost"), ("password", "whatever")])
+        .send()
+        .unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(r.status(), 200); // login form re-rendered with an error
+    assert!(
+        elapsed >= std::time::Duration::from_millis(150),
+        "unknown-user failure returned in {elapsed:?}, below the latency floor"
+    );
+}

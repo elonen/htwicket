@@ -10,6 +10,9 @@ flow itself is explained in [auth-flow.md](auth-flow.md).
 # htwicket's own pages (login, account, admin, …)
 location /htwicket/ {
     proxy_pass http://127.0.0.1:52155;
+    # Full host:port — htwicket's Origin-vs-Host CSRF check on POST needs the port that $host drops.
+    # Omit this and modern browsers (which send Origin on same-origin POSTs) get a 403 on login.
+    proxy_set_header Host $http_host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 
@@ -40,6 +43,11 @@ location @login { return 302 /htwicket/login?rd=$request_uri; }
 
 - One `auth_request_set` + `proxy_set_header` pair **per `[headers.*]`** you want forwarded;
   `X-Remote-User-Id` is always present.
+- The backend's identity comes only from these `X-Remote-User-*` headers, never from the
+  `htwicket_session` cookie (htwicket's private token — the app can't verify it). The cookie still
+  rides to the backend by default (`Path=/`); strip it where practical, but a blanket
+  `proxy_set_header Cookie ""` also drops the app's own cookies, so selective stripping needs an
+  nginx `map`/regex.
 - The `$sc` / `add_header Set-Cookie` line is what makes sliding sessions reach the browser. Drop it
   and active sessions still expire at `session_idle_hours`.
 - `X-Forwarded-For` must be set: htwicket reads its **last** entry as the client IP for rate-limiting

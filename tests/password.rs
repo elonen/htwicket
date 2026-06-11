@@ -222,3 +222,94 @@ fn basic_cache_cleared_on_file_reload() {
         .unwrap();
     assert_eq!(r.status(), 200);
 }
+
+#[test]
+fn account_and_admin_reject_stale_cookie_after_rotation() {
+    // pwd_fp revocation must apply to the authenticated UI pages too, not only /auth. After an
+    // out-of-band rotation the old cookie is stale and must not open /account or /admin — even for a
+    // superadmin (admin is superadmin by username, regardless of password).
+    let srv = spawn("");
+    let c = client();
+    c.post(format!("{}/login", srv.base))
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    // Sanity: the fresh cookie opens /admin.
+    assert_eq!(
+        c.get(format!("{}/admin", srv.base))
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+
+    // Rotate admin's password out-of-band, then bump mtime to force a reload.
+    let htpasswd = srv.dir.path().join(".htpasswd");
+    let rotated = bcrypt::hash("rotated", 5).unwrap();
+    std::fs::write(&htpasswd, format!("admin:{rotated}\nbob:{PW_HASH}\n")).unwrap();
+    bump_mtime(&htpasswd);
+
+    // The stale cookie must no longer open /admin or /account (redirect to login).
+    assert!(
+        c.get(format!("{}/admin", srv.base))
+            .send()
+            .unwrap()
+            .status()
+            .is_redirection(),
+        "stale cookie must not open /admin"
+    );
+    assert!(
+        c.get(format!("{}/account", srv.base))
+            .send()
+            .unwrap()
+            .status()
+            .is_redirection(),
+        "stale cookie must not open /account"
+    );
+}
+
+#[test]
+fn account_password_change_clears_basic_cache() {
+    // A web-side /account password change must clear the Basic verify cache immediately. The
+    // in-process write doesn't bump the file mtime, so the reload-clear path won't fire — without an
+    // explicit clear the old password would ride the 5-min cache TTL.
+    let srv = spawn("");
+    let session = client();
+    session
+        .post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+
+    // Prime the Basic verify cache with bob's current password.
+    let basic = reqwest::blocking::Client::new();
+    assert_eq!(
+        basic
+            .get(format!("{}/auth", srv.base))
+            .basic_auth("bob", Some(PW))
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+
+    // Change the password through the web form.
+    let r = session
+        .post(format!("{}/account", srv.base))
+        .form(&[("old_password", PW), ("new_password", "brandnewpassword")])
+        .send()
+        .unwrap();
+    assert!(r.text().unwrap().contains("Password changed."));
+
+    // The old Basic password must be rejected immediately, not ride the cache TTL.
+    assert_eq!(
+        basic
+            .get(format!("{}/auth", srv.base))
+            .basic_auth("bob", Some(PW))
+            .send()
+            .unwrap()
+            .status(),
+        401,
+        "old password must stop working immediately after a web-side change"
+    );
+}

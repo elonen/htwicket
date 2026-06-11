@@ -16,8 +16,8 @@ use crate::session::{self, Claims};
 use crate::state::UserDb;
 
 use super::helpers::{
-    basic_credentials, client_ip, cookie_header, current_claims, ensure_fresh, lang_of, origin_ok,
-    redirect_to_login, render, valid_rd,
+    authed_claims, basic_credentials, client_ip, cookie_header, cookie_value, current_claims,
+    ensure_fresh, lang_of, origin_ok, redirect_to_login, render, valid_rd,
 };
 use super::templates::{AccountTemplate, ForbiddenTemplate, IndexTemplate, LogoutTemplate};
 use super::views::{
@@ -32,11 +32,20 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
     ensure_fresh(&state).await?;
     let db = state.db.read().await;
 
-    // 1) Session cookie.
-    if let Some(claims) = current_claims(&headers, &state)
-        && let Some(user) = db.users.get(&claims.sub)
-        && (claims.pwd_fp.is_none() || claims.pwd_fp == user.pwd_fp)
-    {
+    // 1) Session cookie. A *present* cookie is authoritative: validate it and, on any failure (bad/
+    //    expired signature, unknown user, rotated password), deny — never fall through to Basic. Else
+    //    a forged or stale cookie could ride along on a Basic-authorized 200, where a backend that
+    //    reads the cookie would trust it.
+    if let Some(token) = cookie_value(&headers, session::COOKIE_NAME) {
+        let granted =
+            session::verify(&token, &state.keys, state.cfg.session_max_days).and_then(|claims| {
+                let user = db.users.get(&claims.sub)?;
+                (claims.pwd_fp.is_none() || claims.pwd_fp == user.pwd_fp).then_some((claims, user))
+            });
+        let Some((claims, user)) = granted else {
+            tracing::debug!(ip = %client_ip(&headers), "auth denied → 401 (cookie present but invalid)");
+            return Ok(StatusCode::UNAUTHORIZED.into_response());
+        };
         let mut out = auth_response_headers(&state, user, &claims.sub)?;
         let reminted = session::needs_remint(&claims, session::now(), state.cfg.session_idle_hours);
         if reminted {
@@ -48,7 +57,8 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
         return Ok((StatusCode::OK, out).into_response());
     }
 
-    // 2) Basic passthrough (scripted clients). Never mints a cookie. Brute-force limited via the
+    // 2) Basic passthrough (scripted clients) — only when NO session cookie was presented. Never
+    //    mints a cookie. Brute-force limited via the
     //    same RateLimiter as the login form, but only cache *misses* touch it: an authenticated
     //    client that polls /auth on every proxied request must never spend per-IP budget. See
     //    docs/security.md "Brute force".
@@ -65,10 +75,10 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
         // even with the right password) and count only failures.
         let ip = client_ip(&headers);
         if state.limiter.check(&user, &ip).is_ok() {
-            let hash = u.hash.clone();
+            let verified_hash = u.hash.clone();
             drop(db); // bcrypt takes ~100ms of CPU; don't hold the read lock across it
-            let good = match hash {
-                Some(h) => authn::verify_password_blocking(pass.clone(), h).await,
+            let good = match &verified_hash {
+                Some(h) => authn::verify_password_blocking(pass.clone(), h.clone()).await,
                 None => false,
             };
             if !good {
@@ -76,13 +86,19 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
                 return Ok(StatusCode::UNAUTHORIZED.into_response());
             }
             state.limiter.record_success(&user, &ip);
-            state.cache.store(&user, &pass);
-            let db = state.db.read().await; // re-acquire: the user may have changed mid-verify
-            if let Some(u) = db.users.get(&user) {
+            // Re-acquire and confirm the hash we verified is still current — a password change during
+            // the verify must not let the old password cache or authorize (the rotation race).
+            let db = state.db.read().await;
+            if let Some(u) = db.users.get(&user)
+                && u.hash == verified_hash
+            {
+                state.cache.store(&user, &pass);
                 let out = auth_response_headers(&state, u, &user)?;
                 tracing::debug!(user = %user, "auth ok via basic (password verified)");
                 return Ok((StatusCode::OK, out).into_response());
             }
+            tracing::debug!(user = %user, "auth denied → 401 (password changed during verify)");
+            return Ok(StatusCode::UNAUTHORIZED.into_response());
         }
     }
 
@@ -153,6 +169,18 @@ pub(super) async fn login_submit(
     let rd = form.rd.unwrap_or_default();
     let ip = client_ip(&headers);
     tracing::debug!(user = %form.username, ip = %ip, "POST login attempt");
+    // Reject malformed usernames before they touch the limiter (bounds limiter-map growth from
+    // sprayed junk). Same generic message as a wrong password — it leaks nothing.
+    if !UserDb::valid_username(&form.username) {
+        tracing::debug!(ip = %ip, "POST login rejected: invalid username");
+        return render_login(
+            &state,
+            &lang,
+            rd,
+            Some(tr(&lang, "Invalid username or password.")),
+            String::new(),
+        );
+    }
     if let Err(t) = state.limiter.check(&form.username, &ip) {
         let msg = match t {
             Throttle::Ip => tr(
@@ -165,6 +193,9 @@ pub(super) async fn login_submit(
     }
     ensure_fresh(&state).await?;
 
+    // Floor the failure path's latency below: an unknown user runs no bcrypt and would otherwise
+    // answer faster than a wrong password, leaking which usernames exist. Measure across read+verify.
+    let start = std::time::Instant::now();
     let hash = {
         let db = state.db.read().await;
         db.users.get(&form.username).and_then(|u| u.hash.clone())
@@ -175,6 +206,10 @@ pub(super) async fn login_submit(
     };
     if !good {
         state.limiter.record_failure(&form.username, &ip);
+        // max(elapsed, 200ms): mask the bcrypt presence/absence behind a constant floor.
+        if let Some(rem) = std::time::Duration::from_millis(200).checked_sub(start.elapsed()) {
+            tokio::time::sleep(rem).await;
+        }
         return render_login(
             &state,
             &lang,
@@ -185,24 +220,42 @@ pub(super) async fn login_submit(
     }
     state.limiter.record_success(&form.username, &ip);
 
+    // The hash our verification corresponds to. A rehash below replaces it with our own re-encoding
+    // of the *same* password, so that becomes the hash we expect to still be current.
+    let verified_hash = hash.unwrap();
+    let mut expected_hash = verified_hash.clone();
+
     // Opt-in: rehash an entry not in the configured algorithm now that we hold the plaintext.
-    let hash = hash.unwrap();
     if state.cfg.upgrade_hash_on_login
-        && authn::needs_rehash(&hash, state.cfg.password_hash)
+        && authn::needs_rehash(&verified_hash, state.cfg.password_hash)
         && let Ok(new_hash) =
             authn::hash_password_blocking(form.password.clone(), state.cfg.password_hash).await
-    {
-        let _ = state
+        && state
             .db
             .write()
             .await
-            .write_password(&form.username, &new_hash);
+            .write_password(&form.username, &new_hash)
+            .is_ok()
+    {
+        expected_hash = new_hash;
     }
 
-    // Read fresh pwd_fp + bake jwt-claims after any rehash.
+    // Re-read fresh pwd_fp + bake jwt-claims after any rehash. Guard the rotation race: if the stored
+    // hash is no longer the one we verified (a concurrent password change landed during the ~100ms
+    // verify), refuse — else we'd mint a session bound to the *new* fingerprint using the old password.
     let (pwd_fp, extra) = {
         let db = state.db.read().await;
         let user = db.users.get(&form.username);
+        if user.and_then(|u| u.hash.as_deref()) != Some(expected_hash.as_str()) {
+            tracing::debug!(user = %form.username, "login aborted: password changed during verify");
+            return render_login(
+                &state,
+                &lang,
+                rd,
+                Some(tr(&lang, "Invalid username or password.")),
+                form.username.clone(),
+            );
+        }
         let fp = user.and_then(|u| u.pwd_fp.clone());
         let extra = eval_jwt_claims(&state, user, &form.username)?;
         (fp, extra)
@@ -256,10 +309,10 @@ pub(super) async fn logout_submit(State(state): State<AppState>, headers: Header
 }
 
 pub(super) async fn account_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
-    let Some(claims) = current_claims(&headers, &state) else {
+    ensure_fresh(&state).await?;
+    let Some(claims) = authed_claims(&headers, &state).await else {
         return Ok(redirect_to_login(&state, "/account"));
     };
-    ensure_fresh(&state).await?;
     let db = state.db.read().await;
     let Some(user) = db.users.get(&claims.sub) else {
         return Ok(redirect_to_login(&state, "/account"));
@@ -288,10 +341,10 @@ pub(super) async fn account_submit(
         tracing::debug!("POST account rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
-    let Some(claims) = current_claims(&headers, &state) else {
+    ensure_fresh(&state).await?;
+    let Some(claims) = authed_claims(&headers, &state).await else {
         return Ok(redirect_to_login(&state, "/account"));
     };
-    ensure_fresh(&state).await?;
     let user = claims.sub.clone();
     tracing::debug!(
         user = %user,
@@ -330,6 +383,9 @@ pub(super) async fn account_submit(
             let hash =
                 authn::hash_password_blocking(newpw.clone(), state.cfg.password_hash).await?;
             state.db.write().await.write_password(&user, &hash)?;
+            // In-process writes don't bump the file mtime, so the reload-clear path won't fire —
+            // drop the Basic verify cache here so the old password stops working immediately.
+            state.cache.clear();
             notice = Some(tr(&lang, "Password changed."));
         }
     }
@@ -398,12 +454,12 @@ pub(super) async fn admin_page(State(state): State<AppState>, headers: HeaderMap
 /// the custom 403 page). Ok carries the verified claims (for the locale context); Err the
 /// early-exit response.
 async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<Claims, Response> {
-    let Some(claims) = current_claims(headers, state) else {
-        return Err(redirect_to_login(state, "/admin"));
-    };
     ensure_fresh(state)
         .await
         .map_err(IntoResponse::into_response)?;
+    let Some(claims) = authed_claims(headers, state).await else {
+        return Err(redirect_to_login(state, "/admin"));
+    };
     let db = state.db.read().await;
     if !is_superadmin(state, db.users.get(&claims.sub), &claims.sub) {
         let lang = lang_of(state, headers, db.users.get(&claims.sub), &claims.sub);
@@ -529,6 +585,7 @@ async fn save_all(
     }
 
     let mut db = state.db.write().await;
+    let mut changed_password = false;
     for row in plan {
         // Apply to the current (old) name, then rename — so the rename carries the fresh data.
         if let Some(fields) = &row.fields {
@@ -536,10 +593,15 @@ async fn save_all(
         }
         if let Some(hash) = row.password_hash {
             db.write_password(&row.old, &hash)?;
+            changed_password = true;
         }
         if row.new != row.old {
             db.rename_user(&row.old, &row.new)?;
         }
+    }
+    drop(db);
+    if changed_password {
+        state.cache.clear(); // see account_submit: in-process writes need an explicit cache drop
     }
     Ok(Ok(tr(lang, "Saved.")))
 }
@@ -582,5 +644,6 @@ async fn add_one(
     }
     let hash = authn::hash_password_blocking(pw.clone(), state.cfg.password_hash).await?;
     state.db.write().await.write_password(username, &hash)?;
+    state.cache.clear(); // see account_submit: in-process writes need an explicit cache drop
     Ok(Ok(tr(lang, "User added.")))
 }

@@ -31,7 +31,18 @@ pub(super) fn current_claims(headers: &HeaderMap, state: &AppState) -> Option<Cl
     session::verify(&token, &state.keys, state.cfg.session_max_days)
 }
 
-fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+/// Authenticated UI user behind the session cookie, applying the SAME revocation gate as `/auth`:
+/// valid token + the user still exists + `pwd_fp` still matches (a rotated password evicts the
+/// cookie everywhere, not only at `/auth`). Returns the claims; callers re-read the DB for what
+/// they render. Run `ensure_fresh` first so the fingerprint compares against current state.
+pub(super) async fn authed_claims(headers: &HeaderMap, state: &AppState) -> Option<Claims> {
+    let claims = current_claims(headers, state)?;
+    let db = state.db.read().await;
+    let user = db.users.get(&claims.sub)?;
+    (claims.pwd_fp.is_none() || claims.pwd_fp == user.pwd_fp).then_some(claims)
+}
+
+pub(super) fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
     let prefix = format!("{name}=");
     raw.split(';')

@@ -3,8 +3,8 @@
 //! Stateless; the only revocation is pwd_fp mismatch (password change rotates it).
 
 use std::fs;
-use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
+use std::io::{Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 
 use anyhow::Context;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -111,6 +111,12 @@ pub fn needs_remint(claims: &Claims, now: u64, session_idle_hours: u32) -> bool 
 /// Load jwt_secret from config, else read/create {state_dir}/jwt_secret (32 random bytes, 0600).
 pub fn load_or_create_secret(cfg: &crate::config::Config) -> anyhow::Result<Vec<u8>> {
     if let Some(secret) = &cfg.jwt_secret {
+        if secret.len() < 32 {
+            tracing::warn!(
+                len = secret.len(),
+                "jwt_secret is shorter than 32 bytes — weak HS256 key; prefer a longer random secret"
+            );
+        }
         return Ok(secret.as_bytes().to_vec());
     }
     let path = cfg.state_dir.join("jwt_secret");
@@ -123,8 +129,15 @@ pub fn load_or_create_secret(cfg: &crate::config::Config) -> anyhow::Result<Vec<
             fs::create_dir_all(&cfg.state_dir)
                 .with_context(|| format!("creating state dir {}", cfg.state_dir.display()))?;
             let secret = random_bytes(32)?;
-            fs::write(&path, &secret).with_context(|| format!("writing {}", path.display()))?;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+            // Create 0600 atomically (mode set at open) so the secret is never briefly world-readable.
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&path)
+                .with_context(|| format!("writing {}", path.display()))?;
+            f.write_all(&secret)
+                .with_context(|| format!("writing {}", path.display()))?;
             tracing::info!("generated new jwt_secret at {}", path.display());
             Ok(secret)
         }

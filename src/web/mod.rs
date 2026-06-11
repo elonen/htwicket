@@ -81,6 +81,13 @@ fn compile_all(cfg: &Config) -> anyhow::Result<CompiledExpressions> {
     let mut headers = Vec::new();
     for (name, spec) in &cfg.headers {
         let hn = HeaderName::try_from(name).map_err(|_| anyhow!("invalid header name `{name}`"))?;
+        // Reserved: `x-remote-user-id` is the canonical identity htwicket always emits, and
+        // `set-cookie` would let a configured header forge sessions — neither may be overridden.
+        if matches!(hn.as_str(), "x-remote-user-id" | "set-cookie") {
+            return Err(anyhow!(
+                "reserved header name `{name}` cannot be configured"
+            ));
+        }
         let expr =
             cel::compile(&spec.expr, spec.type_).with_context(|| format!("headers.{name}"))?;
         headers.push((hn, expr));

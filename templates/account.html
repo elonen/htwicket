@@ -46,7 +46,10 @@
     </div>
     {% endif %}
 
-    <button type="submit">{{ tr("Save") }}</button>
+    <div class="actions">
+      <button type="submit">{{ tr("Save") }}</button>
+      {% if is_superadmin %}<a class="btn btn-secondary" href="{{ base_path }}/admin">{{ tr("Admin view") }}</a>{% endif %}
+    </div>
   </form>
 </section>
 {% endblock %}

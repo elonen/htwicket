@@ -325,6 +325,7 @@ pub(super) async fn account_page(State(state): State<AppState>, headers: HeaderM
         base_path: state.cfg.base_path.clone(),
         username: claims.sub.clone(),
         fields: account_field_views(&state, user, &claims.sub),
+        is_superadmin: is_superadmin(&state, Some(user), &claims.sub),
         error: None,
         notice: None,
         min_password_len: state.cfg.min_password_len,
@@ -419,11 +420,11 @@ pub(super) async fn account_submit(
     }
 
     let db = state.db.read().await;
-    let fields = db
-        .users
-        .get(&user)
+    let user_ref = db.users.get(&user);
+    let fields = user_ref
         .map(|u| account_field_views(&state, u, &user))
         .unwrap_or_default();
+    let superadmin = is_superadmin(&state, user_ref, &user);
     render(AccountTemplate {
         lang,
         insecure_cookies: state.cfg.insecure_cookies,
@@ -431,6 +432,7 @@ pub(super) async fn account_submit(
         base_path: state.cfg.base_path.clone(),
         username: user,
         fields,
+        is_superadmin: superadmin,
         error,
         notice,
         min_password_len: state.cfg.min_password_len,

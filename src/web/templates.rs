@@ -75,6 +75,8 @@ pub struct LoginTemplate {
     pub insecure_cookies: bool,
     /// Raw HTML branding shown above the form (cfg.app_title_html); rendered with `safe`.
     pub app_title_html: Option<String>,
+    /// cfg.base_path, for the Manage-account button's post-login redirect target.
+    pub base_path: String,
     pub error: Option<String>,
     pub rd: String,
     /// Submitted username, preserved on a failed attempt (empty on first load).
@@ -100,6 +102,8 @@ pub struct AccountTemplate {
     pub base_path: String,
     pub username: String,
     pub fields: Vec<FieldView>,
+    /// Whether this user passes the superadmin gate — gates the /admin shortcut button.
+    pub is_superadmin: bool,
     pub error: Option<String>,
     pub notice: Option<String>,
     /// cfg.min_password_len, for the client-side `minlength` hint (server still enforces).

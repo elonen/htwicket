@@ -375,7 +375,7 @@ input:not([type="checkbox"])[aria-invalid="true"] {
 fieldset {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.1rem 1.1rem 0.2rem;
+  padding: 1.1rem;
   margin: 0 0 1.4rem;
   background: var(--surface-2);
 }
@@ -417,11 +417,13 @@ input[type="submit"] {
 button:hover, .btn:hover { background: var(--accent-hover); }
 button:active, .btn:active { transform: translateY(0.5px); }
 
+.m-top-1 { margin-top: 0.6rem; }
+
 .btn-block { display: flex; width: 100%; }
 
 .btn-secondary {
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-muted);
   border-color: var(--border-strong);
 }
 .btn-secondary:hover { background: var(--surface-2); border-color: var(--text-faint); }

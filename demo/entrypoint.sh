@@ -11,7 +11,9 @@ mkdir -p /var/www/app /var/lib/htwicket
 # bob gets a generated password, printed to the console (`user add --random`).
 htwicket --config "$CFG" user check admin >/dev/null 2>&1 || echo admin | htwicket --config "$CFG" user add admin
 htwicket --config "$CFG" user check alice >/dev/null 2>&1 || echo alice | htwicket --config "$CFG" user add alice
+echo "================================================================"
 htwicket --config "$CFG" user check bob   >/dev/null 2>&1 || htwicket --config "$CFG" user add bob --random
+echo "================================================================"
 
 htwicket --config "$CFG" serve &
 php -S 127.0.0.1:8000 -t /var/www/app >/dev/null 2>&1 &
@@ -22,5 +24,7 @@ for _ in $(seq 1 50); do
     sleep 0.2
 done
 
+echo "================================================================"
 echo "Open http://localhost:8080/ in browser  (users: admin/admin, alice/alice, bob/<password above>)"
+echo "================================================================"
 exec nginx -g 'daemon off;'

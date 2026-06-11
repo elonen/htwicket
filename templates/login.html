@@ -11,13 +11,15 @@
   </div>
   {% endif %}
   <form method="post" class="field-stack">
-    <input type="hidden" name="rd" value="{{ rd }}">
     <input id="username" name="username" value="{{ username }}" placeholder="{{ tr("Username") }}"
            aria-label="{{ tr("Username") }}" autocomplete="username" autocapitalize="none"
-           spellcheck="false"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
+           spellcheck="false" autofocus{% if error.is_some() %} aria-invalid="true"{% endif %} required>
     <input id="password" type="password" name="password" placeholder="{{ tr("Password") }}"
            aria-label="{{ tr("Password") }}" autocomplete="current-password"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
-    <button type="submit" class="btn-block">{{ tr("Sign in") }}</button>
+    {# Both buttons carry name="rd": only the clicked one posts, so Sign in (first = the Enter #}
+    {# default) returns to `rd`, while Manage account redirects to /account after authenticating. #}
+    <button type="submit" name="rd" value="{{ rd }}" class="btn-block">{{ tr("Sign in") }}</button>
+    <button type="submit" name="rd" value="{{ base_path }}/account" class="btn-block btn-secondary m-top-1">{{ tr("Manage account") }}</button>
   </form>
 </section>
 {% endblock %}

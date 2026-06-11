@@ -75,6 +75,35 @@ fn open_redirect_rejected() {
 }
 
 #[test]
+fn manage_account_button_redirects_to_account() {
+    // The "Manage account" submit button carries name="rd" value="<base_path>/account", so
+    // clicking it logs in and lands on /account regardless of any original `rd`. Assert the
+    // template renders that exact value and that posting it redirects there.
+    let srv = spawn("");
+    let html = reqwest::blocking::get(format!("{}/login", srv.base))
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(
+        html.contains(r#"value="/htwicket/account""#),
+        "login should render the Manage-account button target:\n{html}"
+    );
+
+    let c = client();
+    let r = c
+        .post(format!("{}/login", srv.base))
+        .form(&[
+            ("username", "admin"),
+            ("password", PW),
+            ("rd", "/htwicket/account"),
+        ])
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 303);
+    assert_eq!(r.headers().get("location").unwrap(), "/htwicket/account");
+}
+
+#[test]
 fn csrf_origin_guard_on_post() {
     // A browser always sends a matching Origin, so a broken guard survives manual testing —
     // assert it here. A cross-origin POST is refused; the same request same-origin is accepted.

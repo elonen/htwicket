@@ -130,6 +130,45 @@ fn admin_save_rejects_duplicate_username() {
 }
 
 #[test]
+fn account_admin_shortcut_only_for_superadmins() {
+    let srv = spawn("");
+
+    // admin (a superadmin) sees the /admin shortcut on their own account page.
+    let ca = client();
+    ca.post(format!("{}/login", srv.base))
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    let admin_page = ca
+        .get(format!("{}/account", srv.base))
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(
+        admin_page.contains(r#"href="/htwicket/admin""#),
+        "superadmin account page should link to /admin:\n{admin_page}"
+    );
+
+    // bob is not a superadmin => no shortcut.
+    let cb = client();
+    cb.post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+    let bob_page = cb
+        .get(format!("{}/account", srv.base))
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(
+        !bob_page.contains(r#"href="/htwicket/admin""#),
+        "non-superadmin account page must not link to /admin:\n{bob_page}"
+    );
+}
+
+#[test]
 fn account_visibility_and_editability() {
     let srv = spawn("");
     let c = client();

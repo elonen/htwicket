@@ -53,6 +53,7 @@ pub(super) fn render_login(
         lang: lang.to_string(),
         insecure_cookies: state.cfg.insecure_cookies,
         app_title_html: state.cfg.app_title_html.clone(),
+        base_path: state.cfg.base_path.clone(),
         error,
         rd,
         username,

@@ -135,7 +135,16 @@ pub(super) fn lang_of(
 
 #[cfg(test)]
 mod tests {
-    use super::valid_rd;
+    use super::{origin_ok, valid_rd};
+    use axum::http::{HeaderMap, HeaderValue};
+
+    fn headers(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for &(k, v) in pairs {
+            h.insert(k, HeaderValue::from_static(v));
+        }
+        h
+    }
 
     #[test]
     fn valid_rd_accepts_relative_rejects_external_and_control() {
@@ -147,5 +156,23 @@ mod tests {
         for bad in ["", "https://evil", "//evil", "/\\evil", "/a\nb", "/a\0b"] {
             assert!(!valid_rd(bad), "should reject {bad:?}");
         }
+    }
+
+    #[test]
+    fn origin_ok_requires_matching_authority() {
+        // No Origin at all is allowed — curl/older clients send none; SameSite=Lax covers it.
+        assert!(origin_ok(&headers(&[("host", "auth.example")])));
+        // A present Origin must match the Host authority.
+        assert!(origin_ok(&headers(&[
+            ("origin", "https://auth.example"),
+            ("host", "auth.example"),
+        ])));
+        // A foreign Origin is the CSRF case → reject.
+        assert!(!origin_ok(&headers(&[
+            ("origin", "https://evil.example"),
+            ("host", "auth.example"),
+        ])));
+        // A present Origin with no Host to compare against can't be validated → reject.
+        assert!(!origin_ok(&headers(&[("origin", "https://auth.example")])));
     }
 }

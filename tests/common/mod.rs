@@ -144,6 +144,45 @@ pub fn check_exit(config: &Path, user: &str) -> i32 {
         .unwrap()
 }
 
+/// Every `<attr>="..."` value in rendered HTML (double-quoted, which all the templates use). The
+/// form-contract tests use this to assert the page emits exactly the input `name=`s / button
+/// `value=`s the POST handlers read back, so template/handler drift fails a test instead of only
+/// breaking a real browser.
+pub fn attr_values(html: &str, attr: &str) -> Vec<String> {
+    let pat = format!("{attr}=\"");
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find(&pat) {
+        rest = &rest[i + pat.len()..];
+        if let Some(end) = rest.find('"') {
+            out.push(rest[..end].to_string());
+            rest = &rest[end + 1..];
+        }
+    }
+    out
+}
+
+/// The `value="..."` of each element carrying `name="action"` — the admin submit/delete/add
+/// buttons `admin_submit` dispatches on. Relies on the template emitting `name` before `value` on
+/// the button (as admin.html does).
+pub fn action_values(html: &str) -> Vec<String> {
+    const NAME: &str = r#"name="action""#;
+    const VALUE: &str = r#"value=""#;
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find(NAME) {
+        rest = &rest[i + NAME.len()..];
+        if let Some(v) = rest.find(VALUE) {
+            let after = &rest[v + VALUE.len()..];
+            if let Some(end) = after.find('"') {
+                out.push(after[..end].to_string());
+                rest = &after[end + 1..];
+            }
+        }
+    }
+    out
+}
+
 /// Force a strictly-later mtime so the server's mtime-based reload fires regardless of the
 /// filesystem's timestamp resolution.
 pub fn bump_mtime(path: &Path) {

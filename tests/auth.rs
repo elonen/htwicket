@@ -1,5 +1,5 @@
-//! Login flow, /auth header outputs, Basic passthrough, the open-redirect guard, and sliding
-//! session re-mint.
+//! Login flow, /auth header outputs, Basic passthrough, the open-redirect + Origin/CSRF guards,
+//! and sliding session re-mint.
 
 mod common;
 
@@ -72,6 +72,31 @@ fn open_redirect_rejected() {
         .unwrap();
     assert_eq!(r.status(), 303);
     assert_eq!(r.headers().get("location").unwrap(), "/"); // bad rd falls back to "/"
+}
+
+#[test]
+fn csrf_origin_guard_on_post() {
+    // A browser always sends a matching Origin, so a broken guard survives manual testing —
+    // assert it here. A cross-origin POST is refused; the same request same-origin is accepted.
+    let srv = spawn("");
+    let c = client();
+
+    let foreign = c
+        .post(format!("{}/login", srv.base))
+        .header(reqwest::header::ORIGIN, "https://evil.example")
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    assert_eq!(foreign.status(), 403, "cross-origin POST must be refused");
+
+    let same_origin = srv.base.strip_suffix("/htwicket").unwrap().to_string();
+    let ok = c
+        .post(format!("{}/login", srv.base))
+        .header(reqwest::header::ORIGIN, &same_origin)
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    assert_eq!(ok.status(), 303, "same-origin POST should pass the guard");
 }
 
 #[test]

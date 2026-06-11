@@ -1,5 +1,6 @@
-//! Password lifecycle: session revocation on password change (pwd_fp rotation), lazy hash
-//! migration on login, and Basic verify-cache invalidation on file reload.
+//! Password lifecycle: session revocation on password change (pwd_fp rotation) via both the
+//! offline CLI and the /account self-service form, lazy hash migration on login, and Basic
+//! verify-cache invalidation on file reload.
 
 mod common;
 
@@ -43,6 +44,99 @@ fn password_change_invalidates_session() {
     assert_eq!(
         c.get(format!("{}/auth", srv.base)).send().unwrap().status(),
         401
+    );
+}
+
+#[test]
+fn account_password_change_revokes_old_sessions() {
+    // The /account self-service form is the GUI path behind "Changing it signs you out of all
+    // sessions": a successful change rotates pwd_fp, so the cookie minted under the old password
+    // stops working at /auth. (Distinct from the CLI path above — same effect, different entry.)
+    let srv = spawn("");
+    let c = client();
+    c.post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+    assert_eq!(
+        c.get(format!("{}/auth", srv.base)).send().unwrap().status(),
+        200
+    );
+
+    let r = c
+        .post(format!("{}/account", srv.base))
+        .form(&[("old_password", PW), ("new_password", "brandnewpassword")])
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert!(
+        r.text().unwrap().contains("Password changed."),
+        "account form should confirm the change"
+    );
+
+    // Old cookie is now stale (pwd_fp mismatch) → 401.
+    assert_eq!(
+        c.get(format!("{}/auth", srv.base)).send().unwrap().status(),
+        401
+    );
+    // The new password authenticates.
+    let basic = reqwest::blocking::Client::new()
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some("brandnewpassword"))
+        .send()
+        .unwrap();
+    assert_eq!(basic.status(), 200);
+}
+
+#[test]
+fn account_password_change_validation_keeps_old_password() {
+    // Wrong current password and too-short new password are each rejected with a message, and the
+    // stored password is left untouched (the original still authenticates).
+    let srv = spawn("");
+    let c = client();
+    c.post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+
+    let wrong_old = c
+        .post(format!("{}/account", srv.base))
+        .form(&[
+            ("old_password", "nope"),
+            ("new_password", "brandnewpassword"),
+        ])
+        .send()
+        .unwrap();
+    assert!(
+        wrong_old
+            .text()
+            .unwrap()
+            .contains("Current password is incorrect."),
+        "wrong current password should be rejected"
+    );
+
+    let too_short = c
+        .post(format!("{}/account", srv.base))
+        .form(&[("old_password", PW), ("new_password", "short")])
+        .send()
+        .unwrap();
+    assert!(
+        too_short
+            .text()
+            .unwrap()
+            .contains("New password is too short."),
+        "too-short new password should be rejected"
+    );
+
+    let basic = reqwest::blocking::Client::new()
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("bob", Some(PW))
+        .send()
+        .unwrap();
+    assert_eq!(
+        basic.status(),
+        200,
+        "password must be unchanged after rejections"
     );
 }
 

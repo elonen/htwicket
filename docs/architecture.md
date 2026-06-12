@@ -30,8 +30,11 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 | `session.rs` | JWT mint / verify / re-mint; `jwt_secret` load-or-create |
 | `cel.rs` | compile + eval + type-check CEL |
 | `i18n.rs` | locale negotiation + catalog lookup |
-| `web/mod.rs` | axum router |
-| `web/templates.rs` | askama view models |
+| `web/mod.rs` | axum router; compiles every CEL expr at startup |
+| `web/handlers.rs` | route handlers — `/auth`, login, logout, account, admin |
+| `web/views.rs` | view models + CEL evaluation (header/claim/superadmin/editable) |
+| `web/helpers.rs` | request parsing, cookies, locale negotiation, `rd` validation |
+| `web/templates.rs` | askama view structs |
 | `templates/*.html`, `web/htwicket.css` | the embedded UI |
 
 `build.rs` compiles `po/*.po` into `OUT_DIR/i18n_catalog.rs` (see [translating.md](translating.md)).
@@ -42,10 +45,14 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 
 - **Unit** — hash-verify matrix (every legacy format + garbage), CEL eval/type-checks, config
   layering + validation, sidecar schema, `rd` validation, session mint/verify/re-mint/cap.
-- **Integration** (`tests/integration.rs`) — spawns the real binary against tempdir files and drives
-  it over HTTP: login → `/auth` headers, Basic passthrough, lockout (form + Basic), sliding re-mint
-  `Set-Cookie`, Basic verify-cache cleared on reload, admin CRUD + batch rename, account
-  visibility/editability, password-change session invalidation, `user check` exit codes.
+- **Integration** (`tests/*.rs`, one suite per feature) — spawn the real binary against tempdir
+  files and drive it over HTTP: login → `/auth` headers, Basic passthrough, open-redirect/CSRF
+  guards, sliding re-mint `Set-Cookie` (`auth.rs`); lockout on form + Basic (`rate_limit.rs`);
+  password-change session invalidation + lazy hash migration + Basic verify-cache reload
+  (`password.rs`); admin CRUD + batch rename + account visibility/editability (`admin.rs`); logout
+  (`logout.rs`); locale negotiation + `default_lang` (`i18n.rs`); `user check` exit codes + bootstrap
+  flags (`cli.rs`); page chrome + `app_title_html` branding (`ui.rs`); and a form-contract guard
+  against template/handler drift (`form_contract.rs`).
 
 Full nginx end-to-end is left to downstream deployments.
 

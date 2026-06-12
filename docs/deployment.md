@@ -129,8 +129,8 @@ exprs to compile, so a broken `[headers.*]` can't lock you out of fixing it).
 
 | command | does |
 |---|---|
-| `htwicket user add <name>` | add user; password from tty/stdin, or `--random` (prints it) |
-| `htwicket user passwd <name>` | set password; tty/stdin, or `--random` |
+| `htwicket user add <name>` | add user; password from tty/stdin, `--random` (prints it), or `--password-env VAR`; `--if-missing` makes a re-run on an existing user a no-op (idempotent bootstrap) |
+| `htwicket user passwd <name>` | set password; tty/stdin, `--random`, or `--password-env VAR` |
 | `htwicket user del <name>` | remove from both files |
 | `htwicket user list` | list usernames |
 | `htwicket user check <name>` | exit `0` ok+password set, `1` missing, `2` sidecar fields fail schema |

@@ -14,14 +14,14 @@ browser ──► nginx (TLS) ──► protected location
                                             └──► 401 ──► nginx error_page ──► 302 /login?rd=…
 ```
 
-Mginx fires an internal `auth_request` to `/auth` for every hit on a protected location. **200** =
+Nginx fires an internal `auth_request` to `/auth` for every hit on a protected location. **200** =
 let the request through, copying htwicket's `X-Remote-User-*` headers to the backend. **401** =
 nginx redirects the browser to the login form, remembering the original URL in `rd` (redirect after login).
 
 ## Per-request: `GET /auth`
 
 The handler tries each credential source in order and stops at the first that works
-(`src/web/mod.rs::auth`):
+(`src/web/handlers.rs::auth`):
 
 1. **Session cookie** `htwicket_session` — verify the JWT (below); confirm the user still exists
    and the password fingerprint still matches. On success emit headers and maybe re-mint the cookie.

@@ -61,6 +61,7 @@ identifier (`[A-Za-z_][A-Za-z0-9_]*`).
 | `required` | non-bool only; flags a missing value in `user check` / admin UI |
 | `user_visible` (`false`) | show it (RO) on the user's own `/account` (implicit if `editable`) |
 | `user_editable_expr` (`"false"`) | CEL bool: may *this* user edit it? |
+| `sort_key` | display order in `/admin` + `/account` (sorted as a string, ties by name); unset → by field name |
 
 **`[headers.<name>]`** and **`[jwt-claims.<name>]`** — `{ type, expr }`. Each `expr` is CEL.
 Headers are emitted on every `/auth` 200 (live); claims are baked once at login (stale until

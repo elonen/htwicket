@@ -122,6 +122,9 @@ pub struct FieldSpec {
     /// Default "false" (admin-only). e.g. "true" (anyone), or "fields.is_admin".
     #[serde(default = "d_false_expr")]
     pub user_editable_expr: String,
+    /// Sort key for field's position in management views. If unset, user field name for sorting.
+    #[serde(default)]
+    pub sort_key: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -205,6 +208,21 @@ pub struct Overrides {
     pub app_title_html: Option<String>,
 }
 
+impl Config {
+    /// Schema fields in display order for /admin and /account: sorted by each field's `sort_key`
+    /// (falling back to its name when unset), ties broken by name. `cfg.fields` is a name-sorted
+    /// BTreeMap, so with no `sort_key` set this is just the current alphabetical order.
+    pub fn ordered_fields(&self) -> Vec<(&String, &FieldSpec)> {
+        let mut v: Vec<_> = self.fields.iter().collect();
+        v.sort_by(|(a_name, a), (b_name, b)| {
+            let a_key = a.sort_key.as_deref().unwrap_or(a_name);
+            let b_key = b.sort_key.as_deref().unwrap_or(b_name);
+            a_key.cmp(b_key).then_with(|| a_name.cmp(b_name))
+        });
+        v
+    }
+}
+
 pub fn load(path: &Path, cli: &Overrides) -> anyhow::Result<Config> {
     // `jwt_secret_file` is read by us below (not a Config field), so keep it out of the figment —
     // `deny_unknown_fields` would otherwise reject the env var.
@@ -273,6 +291,37 @@ mod tests {
     }
     const REQUIRED: &str = "htpasswd_file = \"/tmp/.htpasswd\"\n";
     const SUPERADMINS: &str = "[superadmins]\nexpr = \"false\"\n";
+
+    #[test]
+    fn ordered_fields_defaults_to_name_order() {
+        let cfg = parse(&format!(
+            "{REQUIRED}{SUPERADMINS}[fields.zebra]\ntype = \"string\"\n[fields.alpha]\ntype = \"string\"\n"
+        ));
+        let order: Vec<&str> = cfg
+            .ordered_fields()
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect();
+        assert_eq!(order, ["alpha", "zebra"]); // no sort_key → field-name order
+    }
+
+    #[test]
+    fn ordered_fields_uses_sort_key_then_name() {
+        // Declaration order is irrelevant; sort_key drives position, unset falls back to name.
+        let cfg = parse(&format!(
+            "{REQUIRED}{SUPERADMINS}\
+             [fields.bbb]\ntype = \"string\"\nsort_key = \"1\"\n\
+             [fields.aaa]\ntype = \"string\"\n\
+             [fields.ccc]\ntype = \"string\"\nsort_key = \"2\"\n"
+        ));
+        let order: Vec<&str> = cfg
+            .ordered_fields()
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect();
+        // String sort: "1"(bbb) < "2"(ccc) < "aaa" (aaa's unset key = its name).
+        assert_eq!(order, ["bbb", "ccc", "aaa"]);
+    }
 
     #[test]
     fn valid_config_passes() {

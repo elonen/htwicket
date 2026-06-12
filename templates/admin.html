@@ -39,7 +39,7 @@
     </div>
 
     {% if !add_fields.is_empty() %}
-    <details class="ur-fields">
+    <details class="ur-fields" open>
       <summary>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
         {{ tr("Profile fields") }} <span class="count">{{ add_fields.len() }}</span>

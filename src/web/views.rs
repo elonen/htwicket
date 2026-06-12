@@ -45,8 +45,8 @@ pub(super) async fn render_admin(
 
 /// Field views for the add-user form: every schema field, editable, pre-filled with its default.
 fn add_field_views(cfg: &Config) -> Vec<FieldView> {
-    cfg.fields
-        .iter()
+    cfg.ordered_fields()
+        .into_iter()
         .map(|(name, spec)| make_field_view(name, spec, spec.default.as_ref(), true))
         .collect()
 }
@@ -105,8 +105,8 @@ fn make_field_view(
 
 /// Admin sees and may edit every schema field.
 fn admin_field_views(cfg: &Config, values: &BTreeMap<String, toml::Value>) -> Vec<FieldView> {
-    cfg.fields
-        .iter()
+    cfg.ordered_fields()
+        .into_iter()
         .map(|(name, spec)| make_field_view(name, spec, values.get(name), true))
         .collect()
 }
@@ -117,8 +117,8 @@ pub(super) fn account_field_views(state: &AppState, user: &User, username: &str)
     let ctx = cel::context(&user.fields, username).ok();
     state
         .cfg
-        .fields
-        .iter()
+        .ordered_fields()
+        .into_iter()
         .filter_map(|(name, spec)| {
             let editable = ctx
                 .as_ref()

@@ -46,20 +46,25 @@ expr = "username == 'admin' || fields.is_admin"
 #   user_visible       = false   # show it (read-only) to the user. Default false (hidden).
 #   user_editable_expr = "false" # CEL (bool) over {username, fields.*}: may THIS user edit it?
 #                                # Default "false" (admin-only). Editable implies visible.
+#   sort_key           = "1"     # display order in /admin + /account (sorted as a string, ties by
+#                                # name). Unset → ordered by field name. e.g. "1","2","3" below.
 
 [fields.display_name]
 type = "string"
 default = ""
 user_editable_expr = "true"        # anyone may edit their own display name
+sort_key = "1"
 
 [fields.is_admin]
 type = "bool"
 default = false                    # admin-only (default user_editable_expr = "false", hidden)
+sort_key = "2"
 
 [fields.can_upload]
 type = "bool"
 default = true
 user_visible = true                # users see it read-only; only admins toggle it
+sort_key = "3"
 
 [headers.X-Remote-User-Name]
 type = "string"

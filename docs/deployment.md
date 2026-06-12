@@ -77,7 +77,47 @@ sudo htwicket user add admin
 sudo systemctl enable --now htwicket
 ```
 
-`GET /healthz` returns an unauthenticated `200` for load-balancer probes.
+`GET {base_path}/healthz` (e.g. `/htwicket/healthz`) returns an unauthenticated `200` for
+load-balancer probes; the distroless container image has no `curl`, so its `HEALTHCHECK` runs
+`htwicket healthz`, which probes that endpoint itself.
+
+## Docker Compose
+
+The published image is `ghcr.io/elonen/htwicket` — a multi-arch ~2 MB static (musl) binary on
+distroless. [`demo/compose.yml`](../demo/compose.yml) +
+[`demo/nginx-default.conf`](../demo/nginx-default.conf) are a runnable htwicket + nginx + backend
+stack; adapt them for production:
+
+1. **Image, not `build:`** — `image: ghcr.io/elonen/htwicket:<version>` (pin a tag; `latest` tracks
+   releases).
+2. **Drop the demo-only env** — remove `HTWICKET_INSECURE_COOKIES`, `HTWICKET_BASIC_AUTH_PASSTHROUGH`
+   and `HTWICKET_MIN_PASSWORD_LEN`. Keep `HTWICKET_LISTEN=0.0.0.0:52155` (so nginx's container can
+   reach it) and the `/data` path overrides.
+3. **Terminate TLS in nginx** — uncomment the `443`/`ssl` block in `nginx-default.conf` and the cert
+   mount + `443:443` publish in `compose.yml`. Behind https, `insecure_cookies` stays `false` — the
+   browser judges `Secure` by its own scheme, not htwicket's plain-http listener.
+4. **Pin the JWT key** — the demo auto-generates `jwt_secret` in the `data` volume (lost on `down -v`,
+   unsharable across replicas). Mount a Compose `secret` and set
+   `HTWICKET_JWT_SECRET_FILE=/run/secrets/htwicket_jwt`.
+5. **Seed the admin in-stack** — instead of the Makefile's seeding, add a one-shot the htwicket
+   service `depends_on` (`condition: service_completed_successfully`):
+
+   ```yaml
+   htwicket-init:
+     image: ghcr.io/elonen/htwicket:<version>
+     command: ["user", "add", "admin", "--if-missing", "--password-env", "HTWICKET_ADMIN_PASSWORD"]
+     environment: { HTWICKET_ADMIN_PASSWORD: ${HTWICKET_ADMIN_PASSWORD} }
+     volumes: ["data:/data", "./htwicket.toml:/etc/htwicket.toml:ro"]
+   ```
+
+   `--if-missing` makes re-runs a no-op, so it's safe on every `up`.
+6. **Real backend** — swap the PHP `app` for your upstream; point `location /`'s `proxy_pass` at it
+   and add one `auth_request_set`/`proxy_set_header` pair per `[headers.*]` forwarded.
+
+`healthz` gates startup (nginx `depends_on` htwicket `condition: service_healthy`; the image
+`HEALTHCHECK` calls `htwicket healthz`). Multiple replicas need a **shared** `jwt_secret` (step 4)
+**and** a shared data volume — the file `flock` only coordinates writers on one filesystem, so
+cross-host needs shared storage.
 
 ## Managing users (CLI)
 

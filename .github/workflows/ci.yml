@@ -48,7 +48,7 @@ jobs:
           for debver in trixie bookworm; do
             DEBIAN_VER=$debver TARGET_ARCH=${{ matrix.arch }} make debian-docker-one
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deb-${{ matrix.arch }}
           path: dist_deb/*.deb
@@ -99,7 +99,7 @@ jobs:
           touch "/tmp/digests/${DIGEST#sha256:}"
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: github.event_name != 'pull_request'
         with:
           name: digest-${{ matrix.arch }}
@@ -117,7 +117,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           target: binary
           outputs: type=local,dest=./static-out
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: static-${{ matrix.arch }}

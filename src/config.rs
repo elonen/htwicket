@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context as _;
 use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
 use serde::{Deserialize, Serialize};
@@ -205,11 +206,26 @@ pub struct Overrides {
 }
 
 pub fn load(path: &Path, cli: &Overrides) -> anyhow::Result<Config> {
-    let cfg: Config = Figment::new()
+    // `jwt_secret_file` is read by us below (not a Config field), so keep it out of the figment —
+    // `deny_unknown_fields` would otherwise reject the env var.
+    let mut cfg: Config = Figment::new()
         .merge(Toml::file(path))
-        .merge(Env::prefixed("HTWICKET_").split("__"))
+        .merge(
+            Env::prefixed("HTWICKET_")
+                .split("__")
+                .ignore(&["jwt_secret_file"]),
+        )
         .merge(Serialized::defaults(cli))
         .extract()?;
+    // Docker-style secret indirection: when jwt_secret isn't set directly (file/env/CLI), allow
+    // pointing at a mounted secret file via HTWICKET_JWT_SECRET_FILE. A direct value wins.
+    if cfg.jwt_secret.is_none()
+        && let Ok(file) = std::env::var("HTWICKET_JWT_SECRET_FILE")
+    {
+        let secret = std::fs::read_to_string(&file)
+            .with_context(|| format!("reading HTWICKET_JWT_SECRET_FILE `{file}`"))?;
+        cfg.jwt_secret = Some(secret.trim_end_matches(['\r', '\n']).to_string());
+    }
     validate(&cfg)?;
     // CEL exprs are compiled by `serve` (crate::web), not here: the offline `user` subcommands
     // must keep working for lockout recovery even when a header/claim expr is broken.
@@ -347,6 +363,40 @@ mod tests {
             assert_eq!(cfg.password_hash, PasswordAlgo::Argon2id); // CLI beats env beats file
             assert!(!cfg.http_accept_language); // CLI override of the true default
             assert!(cfg.debug); // CLI flag turns DEBUG tracing on
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn jwt_secret_file_fills_unset_secret() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "htwicket.toml",
+                "htpasswd_file = \"/tmp/.htpasswd\"\n[superadmins]\nexpr = \"false\"\n",
+            )?;
+            // Trailing newline (as `echo secret > file` writes) is trimmed.
+            jail.create_file("secret", "supersecretvalue\n")?;
+            jail.set_env("HTWICKET_JWT_SECRET_FILE", "secret"); // resolved against the jail cwd
+            let cfg = load(Path::new("htwicket.toml"), &Overrides::default())
+                .map_err(|e| figment::Error::from(e.to_string()))?;
+            assert_eq!(cfg.jwt_secret.as_deref(), Some("supersecretvalue"));
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn direct_jwt_secret_wins_over_file() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "htwicket.toml",
+                "htpasswd_file = \"/tmp/.htpasswd\"\n[superadmins]\nexpr = \"false\"\n",
+            )?;
+            jail.create_file("secret", "from-file\n")?;
+            jail.set_env("HTWICKET_JWT_SECRET_FILE", "secret");
+            jail.set_env("HTWICKET_JWT_SECRET", "from-env");
+            let cfg = load(Path::new("htwicket.toml"), &Overrides::default())
+                .map_err(|e| figment::Error::from(e.to_string()))?;
+            assert_eq!(cfg.jwt_secret.as_deref(), Some("from-env"));
             Ok(())
         });
     }

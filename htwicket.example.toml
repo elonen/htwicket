@@ -8,6 +8,8 @@ htpasswd_file = "/var/www/.htpasswd"
 # sidecar_file = "/var/www/.htwicket.toml"   # default: next to htpasswd_file
 # state_dir = "/var/lib/htwicket"            # holds auto-generated jwt_secret
 # jwt_secret = "..."                         # set explicitly for multi-instance / key control
+#                                            # (or HTWICKET_JWT_SECRET / HTWICKET_JWT_SECRET_FILE=/run/secrets/...
+#                                            #  to read it from a mounted Docker/Compose secret file)
 
 # debug = false                 # true raises the log level INFO→DEBUG: traces every request and
 #                               # file read/write to stdout (never secrets). Also --debug / HTWICKET_DEBUG.

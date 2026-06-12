@@ -645,7 +645,16 @@ async fn add_one(
         return Ok(Err(tr(lang, "Password is too short.")));
     }
     let hash = authn::hash_password_blocking(pw.clone(), state.cfg.password_hash).await?;
-    state.db.write().await.write_password(username, &hash)?;
+    // Profile fields submitted alongside the new user (`f_<name>`); skip the sidecar write
+    // entirely when the schema is empty so we don't leave a bare `[users."x"]` table.
+    let fields = collect_fields(&state.cfg, form, |n| format!("f_{n}"), |_| true);
+    {
+        let mut db = state.db.write().await;
+        db.write_password(username, &hash)?;
+        if !fields.is_empty() {
+            db.write_fields(username, &fields)?;
+        }
+    }
     state.cache.clear(); // see account_submit: in-process writes need an explicit cache drop
     Ok(Ok(tr(lang, "User added.")))
 }

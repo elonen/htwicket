@@ -4,11 +4,11 @@
 {% block content %}
 <div class="toolbar">
   <div>
-    <h1>{{ tr("User management") }}</h1>
-    <p class="lede" style="margin:0">{{ tr("Rename, set a password, or edit profile fields, then save.") }}</p>
+    <h2 class="page-title">{{ tr("User management") }}</h2>
+    <p class="lede" style="margin:0">{{ tr("Add a user, or edit existing accounts, then save.") }}</p>
   </div>
   <div class="toolbar-end">
-    <span class="count">{{ tr_count("{count} users", users.len()) }}</span>
+    <span class="count" id="user-count">{{ tr_count("{count} users", users.len()) }}</span>
     <a class="btn btn-secondary btn-sm" href="{{ base_path }}/logout">{{ tr("Sign out") }}</a>
   </div>
 </div>
@@ -23,17 +23,58 @@
 {% endif %}
 {% if let Some(notice) = notice %}<p class="muted" role="status">{{ notice }}</p>{% endif %}
 
+{# Add user leads — the most common operation. A lighter card sets it apart from the edit rows
+   it otherwise mirrors; profile fields are settable at creation (pre-filled with defaults). #}
+<form method="post">
+  <div class="user-row user-row--add">
+    <div class="ur-head">
+      <label for="new_username">{{ tr("Username") }} <span class="req" aria-hidden="true">*</span>
+        <input id="new_username" class="mono-input" name="username" autocomplete="off" autocapitalize="none"
+               spellcheck="false" pattern="[A-Za-z0-9@._\-]{1,64}" required>
+      </label>
+      <label for="add_password">{{ tr("Password") }} <span class="req" aria-hidden="true">*</span>
+        <input id="add_password" type="password" name="new_password" autocomplete="new-password" minlength="{{ min_password_len }}" required>
+      </label>
+      <button type="submit" name="action" value="add" class="ur-del">{{ tr("Add user") }}</button>
+    </div>
+
+    {% if !add_fields.is_empty() %}
+    <details class="ur-fields">
+      <summary>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        {{ tr("Profile fields") }} <span class="count">{{ add_fields.len() }}</span>
+      </summary>
+      <div class="ur-fieldgrid">
+        {% for f in add_fields %}
+          {% if f.is_bool %}
+        <label class="check"><input type="checkbox" name="f_{{ f.name }}"{% if f.checked %} checked{% endif %}> {{ f.label }}</label>
+          {% else %}
+        <label>{{ f.label }} <input type="{{ f.input_type }}" name="f_{{ f.name }}" value="{{ f.value }}"></label>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </div>
+</form>
+
+<hr>
+
 {% if users.is_empty() %}
 <div class="empty">
-  <h2>{{ tr("No users yet") }}</h2>
-  <p>{{ tr("Add the first account below.") }}</p>
+  <h3>{{ tr("No users yet") }}</h3>
+  <p>{{ tr("Add one above to get started.") }}</p>
 </div>
 {% else %}
+{# Progressive-enhancement filter: revealed by the inline script below; stays hidden (and the
+   whole list shows) when JS is off. #}
+<input type="search" id="user-filter" class="user-filter" placeholder="{{ tr("Filter by username…") }}"
+       aria-label="{{ tr("Filter users") }}" autocomplete="off" hidden>
 {# One form for the whole list: edit/rename inline (collapsed rows still submit), then Save. #}
 <form method="post">
-  <div class="user-list">
+  <div class="user-list" data-confirm-delete="{{ tr("Delete this user? This cannot be undone.") }}">
     {% for u in users %}
-    <div class="user-row">
+    <div class="user-row" data-user="{{ u.name }}">
       <div class="ur-head">
         <label>{{ tr("Username") }}{% if !u.has_password %} <span class="tag">{{ tr("no password") }}</span>{% endif %}
           <input class="mono-input" name="username[{{ u.name }}]" value="{{ u.name }}" autocapitalize="none"
@@ -67,30 +108,42 @@
     {% endfor %}
   </div>
 
-  <div class="actions" style="margin-top:1.3rem">
+  <div class="actions ur-save">
     <button type="submit" name="action" value="save">{{ tr("Save changes") }}</button>
   </div>
 </form>
+
+{# Progressive enhancement only: filter + live count + a delete confirmation. With JS off the
+   filter stays hidden, the whole list shows, and Delete posts straight through. #}
+<script>
+(function () {
+  var list = document.querySelector('.user-list');
+  if (!list) return;
+  var rows = [].slice.call(list.querySelectorAll('.user-row'));
+
+  var box = document.getElementById('user-filter');
+  var count = document.getElementById('user-count');
+  var full = count ? count.textContent : '';
+  if (box) {
+    box.hidden = false;
+    box.addEventListener('input', function () {
+      var q = box.value.trim().toLowerCase(), shown = 0;
+      rows.forEach(function (row) {
+        var hit = (row.getAttribute('data-user') || '').toLowerCase().indexOf(q) !== -1;
+        row.hidden = !hit;
+        if (hit) shown++;
+      });
+      if (count) count.textContent = q ? shown + ' / ' + rows.length : full;
+    });
+  }
+
+  var msg = list.getAttribute('data-confirm-delete') || 'Delete this user?';
+  [].forEach.call(list.querySelectorAll('button[value^="delete:"]'), function (btn) {
+    btn.addEventListener('click', function (e) { if (!window.confirm(msg)) e.preventDefault(); });
+  });
+})();
+</script>
 {% endif %}
-
-<hr>
-
-<form method="post">
-  <fieldset>
-    <legend>{{ tr("Add user") }}</legend>
-    <div class="grid">
-      <label for="new_username">{{ tr("Username") }} <span class="req" aria-hidden="true">*</span>
-        <input id="new_username" class="mono-input" name="username" autocomplete="off" autocapitalize="none"
-               spellcheck="false" pattern="[A-Za-z0-9@._\-]{1,64}" required>
-      </label>
-      <label for="add_password">{{ tr("Password") }} <span class="req" aria-hidden="true">*</span>
-        <input id="add_password" type="password" name="new_password" autocomplete="new-password" minlength="{{ min_password_len }}" required>
-      </label>
-    </div>
-    <p class="small muted" style="margin:.2rem 0 1rem">{{ tr("Profile fields use their defaults; edit them above after adding.") }}</p>
-    <button type="submit" name="action" value="add">{{ tr("Add user") }}</button>
-  </fieldset>
-</form>
 {% endblock %}
 {% block footer %}
 <footer class="foot">

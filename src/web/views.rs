@@ -39,7 +39,16 @@ pub(super) async fn render_admin(
         error,
         notice,
         min_password_len: state.cfg.min_password_len,
+        add_fields: add_field_views(&state.cfg),
     })
+}
+
+/// Field views for the add-user form: every schema field, editable, pre-filled with its default.
+fn add_field_views(cfg: &Config) -> Vec<FieldView> {
+    cfg.fields
+        .iter()
+        .map(|(name, spec)| make_field_view(name, spec, spec.default.as_ref(), true))
+        .collect()
 }
 
 pub(super) fn render_login(
@@ -68,7 +77,16 @@ fn make_field_view(
 ) -> FieldView {
     FieldView {
         name: name.to_string(),
-        label: name.replace('_', " "),
+        // snake_case field name → human label, sentence-cased to match the hand-written
+        // labels (e.g. "Current password"): "display_name" → "Display name".
+        label: {
+            let words = name.replace('_', " ");
+            let mut chars = words.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => words,
+            }
+        },
         is_bool: spec.type_ == FieldType::Bool,
         input_type: if spec.type_ == FieldType::Email {
             "email"

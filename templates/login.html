@@ -2,6 +2,7 @@
 {% block title %}{{ tr("Sign in") }}{% endblock %}
 {% block content %}
 <section class="card">
+  <h2 class="page-title">{{ tr("Sign in") }}</h2>
   {% if let Some(error) = error %}
   <div class="alert alert--error" role="alert">
     <span class="alert-icon" aria-hidden="true">
@@ -10,16 +11,24 @@
     <p>{{ error }}</p>
   </div>
   {% endif %}
-  <form method="post" class="field-stack">
-    <input id="username" name="username" value="{{ username }}" placeholder="{{ tr("Username") }}"
-           aria-label="{{ tr("Username") }}" autocomplete="username" autocapitalize="none"
-           spellcheck="false" autofocus{% if error.is_some() %} aria-invalid="true"{% endif %} required>
-    <input id="password" type="password" name="password" placeholder="{{ tr("Password") }}"
-           aria-label="{{ tr("Password") }}" autocomplete="current-password"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
-    {# Both buttons carry name="rd": only the clicked one posts, so Sign in (first = the Enter #}
-    {# default) returns to `rd`, while Manage account redirects to /account after authenticating. #}
+  <form method="post">
+    <label for="username">{{ tr("Username") }}
+      <input id="username" name="username" value="{{ username }}"
+             autocomplete="username" autocapitalize="none"
+             spellcheck="false" autofocus{% if error.is_some() %} aria-invalid="true"{% endif %} required>
+    </label>
+    <label for="password">{{ tr("Password") }}
+      <input id="password" type="password" name="password"
+             autocomplete="current-password"{% if error.is_some() %} aria-invalid="true"{% endif %} required>
+    </label>
+    {# Both submit buttons carry name="rd"; only the clicked one posts. Sign in (first = the Enter #}
+    {# default) returns to `rd`; Manage account posts the same credentials but lands on /account. #}
+    {# The second is a link-styled submit (not an <a>): an anchor would GET /account and drop the #}
+    {# typed password, bouncing back through login. As a submit it signs in in one step. #}
     <button type="submit" name="rd" value="{{ rd }}" class="btn-block">{{ tr("Sign in") }}</button>
-    <button type="submit" name="rd" value="{{ base_path }}/account" class="btn-block btn-secondary m-top-1">{{ tr("Manage account") }}</button>
+    <p class="form-foot">
+      <button type="submit" name="rd" value="{{ base_path }}/account" class="btn-link">{{ tr("Manage account") }}</button>
+    </p>
   </form>
 </section>
 {% endblock %}

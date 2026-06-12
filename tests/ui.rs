@@ -1,5 +1,5 @@
 //! Page chrome: the base-path landing page, whitelabel branding (`app_title_html` rendered raw +
-//! the htwicket footer kept on /admin only), and the placeholder-only login form.
+//! the htwicket footer kept on /admin only), and the login form's labels + heading.
 
 mod common;
 
@@ -65,23 +65,24 @@ fn app_title_html_is_raw_everywhere_footer_admin_only() {
 }
 
 #[test]
-fn login_form_uses_placeholders_and_has_no_heading() {
+fn login_form_has_heading_and_real_labels() {
     let srv = spawn("");
     let body = reqwest::blocking::get(format!("{}/login", srv.base))
         .unwrap()
         .text()
         .unwrap();
-    // The redundant <h1> heading is gone; the field labels moved into placeholders.
+    // Standard, accessible form: an h2 page heading (h1 is reserved for app_title_html branding)
+    // and real <label>s for each field — not placeholder-as-label.
     assert!(
-        !body.contains("<h1>"),
-        "login should carry no heading:\n{body}"
+        body.contains(r#"<h2 class="page-title">Sign in</h2>"#),
+        "login should carry a Sign in heading:\n{body}"
     );
     assert!(
-        body.contains(r#"placeholder="Username""#),
-        "username label should be a placeholder:\n{body}"
+        body.contains(r#"<label for="username">"#) && body.contains(r#"<label for="password">"#),
+        "username and password should have visible labels:\n{body}"
     );
     assert!(
-        body.contains(r#"placeholder="Password""#),
-        "password label should be a placeholder:\n{body}"
+        !body.contains("placeholder="),
+        "fields should use labels, not placeholders:\n{body}"
     );
 }

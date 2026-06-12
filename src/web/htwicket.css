@@ -53,6 +53,9 @@
   --radius-lg: 11px;
   --ring: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent);
   --shadow-card: 0 1px 2px oklch(0.4 0.02 275 / 0.05), 0 6px 22px oklch(0.4 0.02 275 / 0.06);
+  /* Inner shadow that recesses text inputs into the surface ("well"), so a field
+     never reads as a raised/clickable button. */
+  --shadow-inset: inset 0 1px 2px oklch(0.4 0.02 275 / 0.07);
   --tap: 44px;
 }
 
@@ -88,6 +91,7 @@
     --warn-text: oklch(0.86 0.09 82);
 
     --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3), 0 8px 26px oklch(0 0 0 / 0.35);
+    --shadow-inset: inset 0 1px 2px oklch(0 0 0 / 0.28);
   }
 }
 
@@ -164,7 +168,9 @@ body::before {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
-  padding: clamp(1.4rem, 4vw, 2.1rem);
+  /* Named so a full-bleed child (.section header) can cancel exactly this padding. */
+  --card-pad: clamp(1.4rem, 4vw, 2.1rem);
+  padding: var(--card-pad);
 }
 
 /* Whitelabel branding (app_title_html, raw operator HTML) — above the page content. */
@@ -201,10 +207,12 @@ body::before {
 .lockup .wordmark .tld { color: var(--text-faint); font-weight: 500; }
 
 /* ---- Headings & text ----------------------------------------------------- */
+/* Global h1 styles the operator's app_title_html branding (most deployments put an
+   <h1> there); make it the prominent title on the page. */
 h1 {
-  font-size: 1.5rem;
+  font-size: 1.85rem;
   line-height: 1.2;
-  font-weight: 650;
+  font-weight: 680;
   letter-spacing: -0.01em;
   margin: 0 0 0.35rem;
   text-wrap: balance;
@@ -215,6 +223,20 @@ h1 .sub {
   font-size: 0.95rem;
   color: var(--text-muted);
 }
+
+/* htwicket's own page headings (Sign in, User management, Sign out?, the account
+   username) — deliberately quieter so they sit below the app_title_html branding. */
+.page-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  margin: 0 0 1.25rem;
+}
+.toolbar .page-title { margin-bottom: 0.3rem; }
+/* Signed-in username under the "Manage account" heading — monospace marks it an identifier. */
+.ident-line { margin: 0; font-family: var(--font-mono); font-size: 0.95rem; font-weight: 600; color: var(--text); }
+
 .lede { color: var(--text-muted); margin: 0 0 1.6rem; }
 p { margin: 0 0 1rem; }
 small, .small { font-size: 0.82rem; }
@@ -271,9 +293,6 @@ hr {
 /* ---- Forms --------------------------------------------------------------- */
 form { margin: 0; }
 
-/* Placeholder-only fields (login) carry no <label>, so space the rows directly. */
-.field-stack > input:not([type="hidden"]) { margin-bottom: 1rem; }
-
 label {
   display: block;
   font-size: 0.9rem;
@@ -299,9 +318,11 @@ select {
   font: inherit;
   font-size: 0.95rem;
   color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
+  /* Recessed well: inset fill + inner shadow reads as "type here", not a button. */
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-inset);
   transition: border-color 0.12s, box-shadow 0.12s;
   appearance: none;
 }
@@ -326,9 +347,10 @@ a:focus-visible {
 
 input:disabled,
 input[readonly] {
-  background: var(--surface-inset);
+  background: var(--surface-2);
   color: var(--text-muted);
   border-color: var(--border);
+  box-shadow: none;
   cursor: not-allowed;
 }
 
@@ -372,24 +394,59 @@ input:not([type="checkbox"])[aria-invalid="true"] {
   color: var(--danger);
 }
 
+/* Section grouping (account: Change password / Profile; admin: Add user). No box:
+   a heading + full-width hairline, left-aligned with the fields beneath it, reads
+   calmer than a bordered fieldset with an offset uppercase legend. */
 fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 1.9rem;
+}
+/* Section header, same filled-bar vocabulary as account's .section and admin's
+   .ur-fields disclosure (admin's "Add user"). */
+legend {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+  margin-bottom: 1.1rem;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.1rem;
-  margin: 0 0 1.4rem;
-  background: var(--surface-2);
-}
-legend {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  padding: 0 0.45rem;
+  color: var(--text);
 }
 
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
-@media (max-width: 30rem) { .grid { grid-template-columns: 1fr; } }
+/* Collapsible form section (account). A filled header bar + chevron reads as a section
+   header — a different kind of object from the field labels and the username, which sit
+   plain on the card. Native <details>: no JS, keyboard-ok, submits even when collapsed. */
+.section { margin: 0 0 1.5rem; }
+/* Full-bleed header strip: the bar spans the card edge-to-edge (cancel the card's
+   horizontal padding, re-add it as inner padding) while its text — and the fields in
+   .section-body — keep the normal content margin, aligned with Save. */
+.section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 calc(-1 * var(--card-pad));
+  padding: 0.62rem var(--card-pad);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--text);
+  user-select: none;
+}
+.section > summary::-webkit-details-marker { display: none; }
+.section > summary:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.section .chev { width: 13px; height: 13px; flex: none; color: var(--text-faint); transition: transform 0.15s; }
+.section[open] > summary .chev { transform: rotate(90deg); }
+.section-body { padding: 1.15rem 0 0.35rem; }
+/* Full-bleed rule closing the sections off before the form actions (Save). */
+hr.bleed { margin: 0 calc(-1 * var(--card-pad)) 1.4rem; }
 
 /* ---- Buttons ------------------------------------------------------------- */
 button,
@@ -412,14 +469,32 @@ input[type="submit"] {
   border: 1px solid transparent;
   border-radius: var(--radius);
   cursor: pointer;
+  text-decoration: none;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 button:hover, .btn:hover { background: var(--accent-hover); }
 button:active, .btn:active { transform: translateY(0.5px); }
 
-.m-top-1 { margin-top: 0.6rem; }
-
 .btn-block { display: flex; width: 100%; }
+
+/* Submit button styled as a text link — a secondary form action (e.g. login's
+   "Manage account") that must still POST, so it can't be an <a>. */
+.btn-link {
+  display: inline;
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.btn-link:hover { background: none; color: var(--accent-hover); }
+.form-foot { text-align: center; margin: 1rem 0 0; }
 
 .btn-secondary {
   background: var(--surface);
@@ -441,15 +516,6 @@ button:active, .btn:active { transform: translateY(0.5px); }
 .actions .grow { flex: 1; }
 
 /* ---- Account field list -------------------------------------------------- */
-.fieldlist { margin-bottom: 1.5rem; }
-.field-note {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-weight: 400;
-  font-size: 0.78rem;
-  color: var(--text-faint);
-}
 .tag {
   font-family: var(--font-mono);
   font-size: 0.68rem;
@@ -484,7 +550,20 @@ button:active, .btn:active { transform: translateY(0.5px); }
   padding: 0.2rem 0.7rem;
 }
 
+/* Progressive-enhancement filter box (revealed by the inline admin script). */
+.user-filter { max-width: 24rem; margin: 0 0 1.1rem; }
+
 .user-list { display: grid; gap: 0.9rem; }
+
+/* Save stays reachable while editing a long list; its background masks rows scrolling under. */
+.ur-save {
+  position: sticky;
+  bottom: 0;
+  margin-top: 1.3rem;
+  padding: 0.85rem 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
 
 .user-row {
   border: 1px solid var(--border);
@@ -492,6 +571,10 @@ button:active, .btn:active { transform: translateY(0.5px); }
   background: var(--surface);
   padding: 1.05rem 1.15rem 0.95rem;
 }
+/* Add-user card leads the page; a lighter surface (dark theme) sets it apart from the edit
+   rows it mirrors. Its disclosure bar steps down a shade so it still reads on the lighter card. */
+.user-row--add { background: var(--surface-2); }
+.user-row--add .ur-fields > summary { background: var(--surface); }
 
 /* Standard, always-visible controls: rename + set password + delete.
    These three are core (htwicket knows them); they never depend on schema. */
@@ -510,35 +593,40 @@ button:active, .btn:active { transform: translateY(0.5px); }
 
 /* Configurable schema fields: stacked vertically inside a disclosure, so the
    layout holds for an arbitrary set of fields (any count / order / type / name). */
-.ur-fields { margin-top: 0.45rem; }
+.ur-fields { margin-top: 0.7rem; }
+/* Disclosure header styled like account's section bars (filled bar + chevron + sentence
+   case); contained rather than full-bleed, since admin's rows are card-less. */
 .ur-fields > summary {
   list-style: none;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.6rem 0 0.2rem;
-  font-size: 0.78rem;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
   font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
+  color: var(--text);
   user-select: none;
 }
 .ur-fields > summary::-webkit-details-marker { display: none; }
-.ur-fields > summary:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-sm); }
+.ur-fields > summary:focus-visible { outline: none; box-shadow: var(--ring); }
+.ur-fields[open] > summary { border-radius: var(--radius) var(--radius) 0 0; }
 .ur-fields .chev { width: 13px; height: 13px; flex: none; color: var(--text-faint); transition: transform 0.15s; }
 .ur-fields[open] > summary .chev { transform: rotate(90deg); }
-.ur-fields > summary .count { text-transform: none; letter-spacing: 0; }
+.ur-fields > summary .count { text-transform: none; letter-spacing: 0; background: var(--surface-inset); }
 
 .ur-fieldgrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   align-items: start;
   gap: 0 1.4rem;
-  padding: 0.8rem 0 0;
-  margin-top: 0.4rem;
-  border-top: 1px solid var(--border);
+  padding: 1rem 0.8rem 0.2rem;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 .ur-fieldgrid > label { margin-bottom: 0.95rem; }
 .ur-fieldgrid .check { margin-bottom: 0.95rem; padding-top: 1.65rem; }
@@ -553,7 +641,7 @@ button:active, .btn:active { transform: translateY(0.5px); }
   background: var(--surface-2);
   color: var(--text-muted);
 }
-.empty h2 { font-size: 1.05rem; margin: 0 0 0.3rem; color: var(--text); }
+.empty h3 { font-size: 1.05rem; margin: 0 0 0.3rem; color: var(--text); }
 
 /* ---- Footer -------------------------------------------------------------- */
 .foot {

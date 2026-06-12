@@ -107,6 +107,42 @@ fn admin_batch_save_renames_and_edits() {
 }
 
 #[test]
+fn add_user_can_set_profile_fields() {
+    let srv = spawn("");
+    let ca = client();
+    ca.post(format!("{}/login", srv.base))
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    // Adding a user now accepts profile fields (`f_<name>`) in the same request, so an admin
+    // configures the account at creation instead of add-then-edit.
+    let r = ca
+        .post(format!("{}/admin", srv.base))
+        .form(&[
+            ("action", "add"),
+            ("username", "dave"),
+            ("new_password", "davepassword"),
+            ("f_display_name", "Dave"),
+            ("f_is_admin", "on"),
+        ])
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    // Persisted at creation: /auth headers reflect the fields immediately.
+    let auth = reqwest::blocking::Client::new()
+        .get(format!("{}/auth", srv.base))
+        .basic_auth("dave", Some("davepassword"))
+        .send()
+        .unwrap();
+    assert_eq!(auth.status(), 200);
+    assert_eq!(auth.headers().get("x-remote-user-name").unwrap(), "Dave");
+    assert_eq!(
+        auth.headers().get("x-remote-user-is-admin").unwrap(),
+        "true"
+    );
+}
+
+#[test]
 fn admin_save_rejects_duplicate_username() {
     let srv = spawn("");
     let ca = client();
@@ -194,11 +230,11 @@ fn account_visibility_and_editability() {
         "read-only field should have no input"
     );
     assert!(
-        page.contains("can upload"),
+        page.contains("Can upload"),
         "user_visible field should still be shown"
     );
     assert!(
-        !page.contains("is admin"),
+        !page.contains("Is admin"),
         "non-visible field leaked onto /account"
     );
 

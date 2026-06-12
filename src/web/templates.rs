@@ -150,4 +150,6 @@ pub struct AdminTemplate {
     pub notice: Option<String>,
     /// cfg.min_password_len, for the client-side `minlength` hint (server still enforces).
     pub min_password_len: usize,
+    /// Schema fields (editable, pre-filled with their defaults) for the add-user form.
+    pub add_fields: Vec<FieldView>,
 }

@@ -29,6 +29,11 @@ RUN --mount=type=cache,id=htwicket-cargo-registry,target=/usr/local/cargo/regist
     make build-static \
  && cp "target/$(uname -m)-unknown-linux-musl/release/htwicket" /htwicket
 
+# Empty skeleton for the state dir; COPY'd --chown'd into the final stage. Nested
+# under /skel because COPY preserves the mode of a dir's *contents*, not of the
+# copied dir itself.
+RUN mkdir -p -m 700 /skel/data
+
 # Export-only stage: just the static binary, for CI to attach to a release
 # (`--target binary --output type=local,dest=out`). Kept before the final stage
 # so a plain `docker build` still produces the runtime image (= last stage).
@@ -41,6 +46,10 @@ FROM gcr.io/distroless/static:nonroot
 LABEL org.opencontainers.image.source=https://github.com/elonen/htwicket
 COPY --from=builder /htwicket /usr/bin/htwicket
 COPY htwicket.example.toml /usr/share/doc/htwicket/examples/htwicket.toml
+# Conventional state dir /data, 0700, owned by nonroot (65532). A fresh named
+# volume mounted here inherits this ownership (Docker copy-up), so no chown init
+# container is needed. Bind mounts / other paths don't — chown to 65532 yourself.
+COPY --from=builder --chown=65532:65532 /skel/ /
 USER nonroot
 EXPOSE 52155
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

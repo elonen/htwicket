@@ -1,6 +1,5 @@
-# Compose demo: htwicket as the production scratch/distroless image
-# (Dockerfile.runtime, its healthz HEALTHCHECK gating nginx startup) behind stock
-# nginx guarding a stock-PHP page. Run via `make demo` (builds + seeds users first).
+# Compose demo: using htwicket a scratch/distroless Docker image
+# Run via `make demo` (builds + seeds users first).
 # Production adaptation (published image, TLS, secrets, bootstrap): docs/deployment.md -> Docker Compose.
 name: htwicket-demo
 
@@ -12,41 +11,26 @@ services:
     volumes:
       - ../htwicket.example.toml:/etc/htwicket.toml:ro
       - data:/data
-    # Demo-only overrides on top of the verbatim example config (env beats file).
-    # insecure_cookies is required over plain http; the wildcard listen because a
-    # loopback bind isn't reachable cross-container; /data replaces the example's
-    # htpasswd/state paths so one volume holds all mutable state.
+    # See "# PROD" comments for production deployment recommendations
     environment:
       HTWICKET_LISTEN: 0.0.0.0:52155
       HTWICKET_HTPASSWD_FILE: /data/.htpasswd
       HTWICKET_STATE_DIR: /data
-      HTWICKET_INSECURE_COOKIES: "true"
-      HTWICKET_BASIC_AUTH_PASSTHROUGH: "true"
-      HTWICKET_MIN_PASSWORD_LEN: "4"
-      HTWICKET_APP_TITLE_HTML: "<h1>Example App</h1>"
-      # Production: drop the three demo-only lines above (insecure_cookies / basic_auth_passthrough /
-      # min_password_len) and pin the JWT key so sessions survive restarts and replicas share it:
-      #   HTWICKET_JWT_SECRET_FILE: /run/secrets/htwicket_jwt   # + a top-level `secrets:` block (below)
-    # Same self-probe as the image HEALTHCHECK, on demo-snappy timing (the image's
-    # 30s interval would stall nginx's service_healthy gate on first start).
+      HTWICKET_INSECURE_COOKIES: true                  # PROD: "false" or remove (secure cookies require HTTPS)
+      HTWICKET_MIN_PASSWORD_LEN: 4                     # PROD: "8" or greater
+      HTWICKET_BASIC_AUTH_PASSTHROUGH: true            # PROD: "false", unless you have legacy clients that don't support cookies
+      #HTWICKET_PASSWORD_HASH: "argon2id"              # PROD: "argon2id", unless something also else needs standard-compliant .htpasswd (bcrypt)
+      HTWICKET_APP_TITLE_HTML: "<h1>Example App</h1>"  # PROD: customize or remove
+      HTWICKET_DEBUG: false
+
     healthcheck:
       test: ["CMD", "/usr/bin/htwicket", "healthz"]
       interval: 2s
       timeout: 5s
       retries: 15
-    depends_on:
-      data-init:
-        condition: service_completed_successfully
-
-  # distroless has no shell to prep its own volume, so busybox chowns it for the
-  # image's 65532 nonroot user (named volumes are created root-owned).
-  data-init:
-    image: busybox
-    command: chown 65532:65532 /data
-    volumes:
-      - data:/data
 
   app:
+    # Example "app": a PHP page showing logged-in user data
     image: php:8-cli-alpine
     command: php -S 0.0.0.0:8000 -t /var/www/app
     volumes:

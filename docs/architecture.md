@@ -30,7 +30,7 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 | `session.rs` | JWT mint / verify / re-mint; `jwt_secret` load-or-create |
 | `cel.rs` | compile + eval + type-check CEL |
 | `i18n.rs` | locale negotiation + catalog lookup |
-| `web/mod.rs` | axum router + all HTTP handlers |
+| `web/mod.rs` | axum router |
 | `web/templates.rs` | askama view models |
 | `templates/*.html`, `web/htwicket.css` | the embedded UI |
 

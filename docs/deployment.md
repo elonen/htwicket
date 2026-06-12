@@ -92,7 +92,9 @@ stack; adapt them for production:
    releases).
 2. **Drop the demo-only env** — remove `HTWICKET_INSECURE_COOKIES`, `HTWICKET_BASIC_AUTH_PASSTHROUGH`
    and `HTWICKET_MIN_PASSWORD_LEN`. Keep `HTWICKET_LISTEN=0.0.0.0:52155` (so nginx's container can
-   reach it) and the `/data` path overrides.
+   reach it) and the `/data` path overrides — the image ships `/data` owned by its nonroot user
+   (65532), so a fresh named volume mounted there inherits writable ownership. Bind mounts or
+   other paths don't: `chown 65532` those yourself.
 3. **Terminate TLS in nginx** — uncomment the `443`/`ssl` block in `nginx-default.conf` and the cert
    mount + `443:443` publish in `compose.yml`. Behind https, `insecure_cookies` stays `false` — the
    browser judges `Secure` by its own scheme, not htwicket's plain-http listener.

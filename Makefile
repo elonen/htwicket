@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build test check test-and-check clean demo \
+.PHONY: build build-static test check test-and-check clean demo \
         i18n i18n-extract i18n-update i18n-init i18n-stats \
         debian-local debian-docker debian-docker-one
 
@@ -7,6 +7,17 @@ SHELL := /bin/bash
 
 build:
 	cargo build --release
+
+# Fully static musl binary → runs on scratch/distroless, no glibc-version coupling.
+# htwicket is pure Rust with zero C deps, so musl is just a link target — nothing to
+# port. Needs the target + musl linker:
+#   rustup target add $(MUSL_TARGET)   # plus: apt-get install musl-tools (Debian/Ubuntu)
+# Used by Dockerfile.runtime and the CI image job. uname's arm64 (macOS) → aarch64 (rustup).
+MUSL_ARCH ?= $(shell uname -m | sed 's/arm64/aarch64/')
+MUSL_TARGET = $(MUSL_ARCH)-unknown-linux-musl
+
+build-static:
+	cargo build --release --target $(MUSL_TARGET)
 
 test:
 	cargo test
@@ -21,15 +32,26 @@ clean:
 	cargo clean
 	rm -rf dist_deb
 
-# ---- Demo container ------------------------------------------------------
+# ---- Demo (Docker Compose) -----------------------------------------------
 #
-# Build + run the throwaway demo: htwicket behind nginx guarding a PHP page that
-# echoes the forwarded headers + decoded JWT. Browse http://localhost:8080/
-# (admin/admin, alice/alice, bob/<printed>). Ctrl-C to stop. See demo/README.md.
+# Build + run the throwaway demo: the production runtime image (Dockerfile.runtime,
+# scratch/distroless) behind nginx guarding a PHP page that echoes the forwarded
+# headers + decoded JWT. Browse http://localhost:8080/ (admin/admin, alice/alice,
+# bob/<printed>). Ctrl-C to stop; `$(COMPOSE_DEMO) down -v` resets seeded state.
+# Users are seeded here by piping passwords into `user add` inside the distroless
+# container (it has no shell of its own); idempotent via `user check`.
+
+COMPOSE_DEMO = docker compose -f demo/compose.yml
 
 demo:
-	DOCKER_BUILDKIT=1 docker build -f demo/Dockerfile -t htwicket-demo .
-	docker run --rm -p 8080:80 htwicket-demo
+	$(COMPOSE_DEMO) build
+	$(COMPOSE_DEMO) run --rm -T htwicket user check admin >/dev/null 2>&1 || echo admin | $(COMPOSE_DEMO) run --rm -T htwicket user add admin
+	$(COMPOSE_DEMO) run --rm -T htwicket user check alice >/dev/null 2>&1 || echo alice | $(COMPOSE_DEMO) run --rm -T htwicket user add alice
+	@echo ================================================================
+	$(COMPOSE_DEMO) run --rm -T htwicket user check bob >/dev/null 2>&1 || $(COMPOSE_DEMO) run --rm -T htwicket user add bob --random
+	@echo ================================================================
+	@echo "Open http://localhost:8080/  (users: admin/admin, alice/alice, bob/<password above>)"
+	$(COMPOSE_DEMO) up
 
 # ---- Internationalization (gettext) --------------------------------------
 #

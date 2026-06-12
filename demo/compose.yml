@@ -1,0 +1,64 @@
+# Compose demo: htwicket as the production scratch/distroless image
+# (Dockerfile.runtime, its healthz HEALTHCHECK gating nginx startup) behind stock
+# nginx guarding a stock-PHP page. Run via `make demo` (builds + seeds users first).
+name: htwicket-demo
+
+services:
+  htwicket:
+    build:
+      context: ..
+      dockerfile: Dockerfile.runtime
+    volumes:
+      - ../htwicket.example.toml:/etc/htwicket.toml:ro
+      - data:/data
+    # Demo-only overrides on top of the verbatim example config (env beats file).
+    # insecure_cookies is required over plain http; the wildcard listen because a
+    # loopback bind isn't reachable cross-container; /data replaces the example's
+    # htpasswd/state paths so one volume holds all mutable state.
+    environment:
+      HTWICKET_LISTEN: 0.0.0.0:52155
+      HTWICKET_HTPASSWD_FILE: /data/.htpasswd
+      HTWICKET_STATE_DIR: /data
+      HTWICKET_INSECURE_COOKIES: "true"
+      HTWICKET_BASIC_AUTH_PASSTHROUGH: "true"
+      HTWICKET_MIN_PASSWORD_LEN: "4"
+      HTWICKET_APP_TITLE_HTML: "<h1>Example App</h1>"
+    # Same self-probe as the image HEALTHCHECK, on demo-snappy timing (the image's
+    # 30s interval would stall nginx's service_healthy gate on first start).
+    healthcheck:
+      test: ["CMD", "/usr/bin/htwicket", "healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+
+  # distroless has no shell to prep its own volume, so busybox chowns it for the
+  # image's 65532 nonroot user (named volumes are created root-owned).
+  data-init:
+    image: busybox
+    command: chown 65532:65532 /data
+    volumes:
+      - data:/data
+
+  app:
+    image: php:8-cli-alpine
+    command: php -S 0.0.0.0:8000 -t /var/www/app
+    volumes:
+      - ./app:/var/www/app:ro
+
+  nginx:
+    image: nginx:stable-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx-default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      htwicket:
+        condition: service_healthy
+      app:
+        condition: service_started
+
+volumes:
+  data:

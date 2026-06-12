@@ -1,0 +1,49 @@
+# Tiny runtime image: a fully static (musl) htwicket on distroless. htwicket is
+# pure Rust with zero C deps, so musl is just a link target — nothing to port,
+# and the result runs on a ~2 MB base with no glibc-version coupling.
+#
+#   docker build -f Dockerfile.runtime -t htwicket .
+#
+# Built natively per-arch in CI (no QEMU); see .github/workflows/ci.yml. The
+# operator supplies /etc/htwicket.toml (and the .htpasswd it points at) by mount
+# — both `serve` and the `healthz` HEALTHCHECK read that default config path.
+ARG RUST_VER=1
+FROM rust:${RUST_VER}-slim-trixie AS builder
+
+# musl-tools provides the musl-gcc linker; gcc/libc for build scripts are in rust:slim.
+RUN apt-get -qy update \
+ && apt-get -qy install --no-install-recommends make musl-tools \
+ && rm -rf /var/lib/apt/lists/*
+
+# Static target matching the build platform (amd64→x86_64, arm64→aarch64).
+RUN rustup target add "$(uname -m)-unknown-linux-musl"
+
+WORKDIR /app
+COPY . /app
+# `build-static` derives the musl triple from uname; copy the result to a fixed
+# path so the final-stage COPY is arch-independent. Cache mounts make local
+# rebuilds (e.g. `make demo`) incremental; in CI they're empty no-ops.
+RUN --mount=type=cache,id=htwicket-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=htwicket-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=htwicket-musl-target,target=/app/target \
+    make build-static \
+ && cp "target/$(uname -m)-unknown-linux-musl/release/htwicket" /htwicket
+
+# Export-only stage: just the static binary, for CI to attach to a release
+# (`--target binary --output type=local,dest=out`). Kept before the final stage
+# so a plain `docker build` still produces the runtime image (= last stage).
+FROM scratch AS binary
+COPY --from=builder /htwicket /htwicket
+
+# distroless/static:nonroot ships ca-certs, /etc/passwd, tmp, tzdata and a 65532
+# nonroot user — nothing else (no shell), so the HEALTHCHECK uses exec form.
+FROM gcr.io/distroless/static:nonroot
+LABEL org.opencontainers.image.source=https://github.com/elonen/htwicket
+COPY --from=builder /htwicket /usr/bin/htwicket
+COPY htwicket.example.toml /usr/share/doc/htwicket/examples/htwicket.toml
+USER nonroot
+EXPOSE 52155
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD ["/usr/bin/htwicket", "healthz"]
+ENTRYPOINT ["/usr/bin/htwicket"]
+CMD ["serve"]

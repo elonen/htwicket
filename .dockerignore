@@ -11,5 +11,5 @@ dist_deb/
 **/.DS_Store
 po/*.pot
 
-# Demo docs (the image needs demo/'s configs + app, not its README).
-demo/README.md
+# Demo runs stock images with bind mounts — nothing in demo/ is a build input.
+demo/

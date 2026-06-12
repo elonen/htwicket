@@ -1,0 +1,25 @@
+name: GHCR cleanup
+on:
+  schedule:
+    - cron: '14 4 * * 1' # weekly, Mon 04:14 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Delete untagged image versions (per-arch digests and manifests left dangling
+  # when `edge`/`latest` move). The action is manifest-aware: children of tagged
+  # multi-arch indexes are kept, and `validate` double-checks index integrity.
+  # Runs on a schedule (not after each push) with an age guard so it can never
+  # race an in-flight build whose digests aren't tagged by a manifest yet.
+  untagged:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          delete-untagged: true
+          validate: true
+          older-than: 1 day

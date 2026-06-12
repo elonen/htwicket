@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # PRs SHA bumps for the pinned actions in .github/workflows/.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One weekly PR for routine bumps; majors still get individual PRs.
+      cargo-minor-patch:
+        update-types: [minor, patch]

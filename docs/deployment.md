@@ -1,6 +1,6 @@
 # Deployment
 
-## nginx wiring
+## Nginx configuration
 
 Htwicket sits behind nginx, which terminates TLS and is htwicket's only direct peer. Serve htwicket
 under the same `base_path` it's configured with, so `proxy_pass` needs no URL rewriting. The auth

@@ -80,7 +80,7 @@ downgrade the verifier. Stateless: htwicket keeps no server-side session list.
 | `pwd_fp` | password fingerprint — first 16 hex of SHA-256(`.htpasswd` hash) |
 | *(extra)* | each `[jwt-claims.*]`, baked at login |
 
-`src/session.rs`.
+`src/token.rs`.
 </details>
 
 ### Lifecycle

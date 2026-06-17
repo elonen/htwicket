@@ -221,6 +221,46 @@ impl Config {
         });
         v
     }
+
+    /// Resolve the declared field schema against a raw sidecar table. Every field always gets a value
+    /// (sidecar value > config default > type-zero) so CEL exprs are total over `fields.*` and a
+    /// missing/typo'd field never 500s /auth. Type mismatches and missing required fields are
+    /// returned as advisory problems (they back `user check` exit 2 and the admin UI).
+    pub fn resolve_fields(
+        &self,
+        raw: &toml::Table,
+    ) -> (BTreeMap<String, toml::Value>, Vec<String>) {
+        let mut out = BTreeMap::new();
+        let mut errors = Vec::new();
+        for (name, spec) in &self.fields {
+            let value = match raw.get(name) {
+                Some(v) if spec.type_.matches(v) => v.clone(),
+                Some(_) => {
+                    errors.push(format!("field `{name}` is not a {:?}", spec.type_));
+                    fallback(spec.type_, spec.default.as_ref())
+                }
+                None => {
+                    if spec.required && spec.default.is_none() {
+                        errors.push(format!("required field `{name}` is missing"));
+                    }
+                    fallback(spec.type_, spec.default.as_ref())
+                }
+            };
+            out.insert(name.clone(), value);
+        }
+        (out, errors)
+    }
+}
+
+/// Config default if present, else the type's zero value (false / "").
+fn fallback(t: FieldType, default: Option<&toml::Value>) -> toml::Value {
+    if let Some(d) = default {
+        return d.clone();
+    }
+    match t {
+        FieldType::Bool => toml::Value::Boolean(false),
+        FieldType::String | FieldType::Email => toml::Value::String(String::new()),
+    }
 }
 
 pub fn load(path: &Path, cli: &Overrides) -> anyhow::Result<Config> {

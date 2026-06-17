@@ -20,11 +20,11 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use tokio::sync::RwLock;
 
-use crate::authn::{RateLimiter, VerifyCache};
+use crate::auth::{RateLimiter, VerifyCache};
 use crate::cel::{self, CompiledExpr};
 use crate::config::{Config, FieldType};
-use crate::session;
 use crate::state::UserDb;
+use crate::token;
 
 /// CEL (Common Expression Language) programs + parsed header names, compiled once at startup (bad expr / header name = fail).
 struct CompiledExpressions {
@@ -41,7 +41,7 @@ struct CompiledExpressions {
 struct AppState {
     cfg: Arc<Config>,
     db: Arc<RwLock<UserDb>>,
-    keys: Arc<session::Keys>,
+    keys: Arc<token::Keys>,
     compiled: Arc<CompiledExpressions>,
     limiter: Arc<RateLimiter>,
     cache: Arc<VerifyCache>,
@@ -50,7 +50,7 @@ struct AppState {
 pub fn serve(cfg: Config) -> anyhow::Result<()> {
     let cfg = Arc::new(cfg);
     let compiled = Arc::new(compile_all(&cfg)?); // startup failure on a bad expr / header name
-    let keys = Arc::new(session::Keys::new(&session::load_or_create_secret(&cfg)?));
+    let keys = Arc::new(token::Keys::new(&token::load_or_create_secret(&cfg)?));
     let db = Arc::new(RwLock::new(UserDb::load(cfg.clone())?));
     if cfg.insecure_cookies {
         tracing::warn!(

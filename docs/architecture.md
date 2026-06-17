@@ -18,16 +18,23 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
 | i18n | gettext `po/*.po`, compiled by `build.rs` into a static table |
 | logging | `tracing` → stdout (journald/docker); INFO, or DEBUG when `debug = true` |
 
+The design leaves room for things like TOTP and alternative auth methods like OIDC: they'd be just another route that
+mints the same session JWT. Not implemented for now though.
+
 ## Module map (`src/`)
 
 | file | responsibility |
 |---|---|
-| `main.rs` | thin entry → `cli::run` |
-| `cli.rs` | clap: `serve` (default) + offline `user` subcommands; tracing init (`debug` → DEBUG) |
+| `main.rs` | entry: load config, init tracing (`debug` → DEBUG), dispatch `serve`/`user`/`healthz` |
+| `cli/mod.rs` | clap `Cli`/`Command`: `serve` (default), offline `user`, `healthz` |
+| `cli/user.rs` | offline `user` subcommands (add/passwd/del/list/check) |
+| `cli/healthz.rs` | `healthz` subcommand — probe a running server's `/healthz` for container `HEALTHCHECK` |
 | `config.rs` | load + layer + validate `Config` |
 | `state.rs` | in-memory `UserDb` over `.htpasswd` + sidecar; reload, `flock`, atomic writes |
-| `authn.rs` | password verify, Basic-verify cache, brute-force limiter |
-| `session.rs` | JWT mint / verify / re-mint; `jwt_secret` load-or-create |
+| `auth/password.rs` | password verify + hash (legacy in, `password_hash` out) |
+| `auth/cache.rs` | Basic-passthrough verify cache |
+| `auth/ratelimit.rs` | brute-force limiter (per-username backoff + per-IP cap) |
+| `token.rs` | JWT mint / verify / re-mint; `jwt_secret` load-or-create |
 | `cel.rs` | compile + eval + type-check CEL |
 | `i18n.rs` | locale negotiation + catalog lookup |
 | `web/mod.rs` | axum router; compiles every CEL expr at startup |
@@ -55,14 +62,3 @@ A single Rust binary. Templates, the one stylesheet, and the compiled translatio
   against template/handler drift (`form_contract.rs`).
 
 Full nginx end-to-end is left to downstream deployments.
-
-## Non-goals & extension seams
-
-Deliberately out of scope (v1): TOTP/passkeys/OIDC, password-reset email, multi-domain/forward-auth
-SSO (subpath-on-same-vhost only), a server-side session store or revocation beyond `pwd_fp`, unix
-socket listener, and admin-UI pagination.
-
-The design leaves room, though: any future auth method is just another route that mints the **same**
-session JWT — the `factors` claim records which methods were used, and per-user secrets can live in
-the sidecar. An OIDC-only deployment would swap Basic passthrough for API tokens on the same verify
-path. None of it is built yet.

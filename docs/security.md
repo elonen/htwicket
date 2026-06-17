@@ -22,7 +22,7 @@ on every POST** — a present `Origin` must match `Host`, else `403`. A missing 
 
 ## Brute force
 
-In-memory, per-process (`src/authn.rs`):
+In-memory, per-process (`src/auth/ratelimit.rs`):
 
 - **Per-username**: exponential backoff after 5 failures — `2^n` seconds, capped at 5 min. Cleared
   on a successful login.

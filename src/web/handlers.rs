@@ -9,15 +9,16 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use crate::authn::{self, Throttle};
+use crate::auth::{self, Throttle};
 use crate::cel;
 use crate::i18n::tr;
-use crate::session::{self, Claims};
 use crate::state::UserDb;
+use crate::token::{self, Claims};
 
 use super::helpers::{
-    authed_claims, basic_credentials, client_ip, cookie_header, cookie_value, current_claims,
-    ensure_fresh, lang_of, origin_ok, redirect_to_login, render, valid_rd,
+    authed_claims, basic_credentials, cookie_header, cookie_value, csrf_origin_ok, ensure_db_fresh,
+    forwarded_for_client_ip, get_and_validate_token_claims, lang_of, redirect_to_login, render,
+    valid_redirect,
 };
 use super::templates::{AccountTemplate, ForbiddenTemplate, IndexTemplate, LogoutTemplate};
 use super::views::{
@@ -29,28 +30,28 @@ use super::{AppError, AppState, Handler};
 /// nginx auth_request target. Order: session cookie → Basic (if passthrough) → 401 (bare).
 /// 200: X-Remote-User-Id + [headers.*] CEL outputs + sliding re-mint Set-Cookie.
 pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> Handler {
-    ensure_fresh(&state).await?;
+    ensure_db_fresh(&state).await?;
     let db = state.db.read().await;
 
     // 1) Session cookie. A *present* cookie is authoritative: validate it and, on any failure (bad/
     //    expired signature, unknown user, rotated password), deny — never fall through to Basic. Else
     //    a forged or stale cookie could ride along on a Basic-authorized 200, where a backend that
     //    reads the cookie would trust it.
-    if let Some(token) = cookie_value(&headers, session::COOKIE_NAME) {
+    if let Some(token) = cookie_value(&headers, token::COOKIE_NAME) {
         let granted =
-            session::verify(&token, &state.keys, state.cfg.session_max_days).and_then(|claims| {
+            token::verify_jwt(&token, &state.keys, state.cfg.session_max_days).and_then(|claims| {
                 let user = db.users.get(&claims.sub)?;
                 (claims.pwd_fp.is_none() || claims.pwd_fp == user.pwd_fp).then_some((claims, user))
             });
         let Some((claims, user)) = granted else {
-            tracing::debug!(ip = %client_ip(&headers), "auth denied → 401 (cookie present but invalid)");
+            tracing::debug!(ip = %forwarded_for_client_ip(&headers), "auth denied → 401 (cookie present but invalid)");
             return Ok(StatusCode::UNAUTHORIZED.into_response());
         };
         let mut out = auth_response_headers(&state, user, &claims.sub)?;
-        let reminted = session::needs_remint(&claims, session::now(), state.cfg.session_idle_hours);
+        let reminted = token::time_to_extend(&claims, token::now(), state.cfg.session_idle_hours);
         if reminted {
-            let next = session::remint(&claims, session::now(), state.cfg.session_idle_hours);
-            let token = session::mint(&next, &state.keys)?;
+            let next = token::extend_validity(&claims, token::now(), state.cfg.session_idle_hours);
+            let token = token::mint_jwt(&next, &state.keys)?;
             out.insert(header::SET_COOKIE, cookie_header(&token, &state.cfg)?);
         }
         tracing::debug!(user = %claims.sub, reminted, "auth ok via session cookie");
@@ -73,12 +74,12 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
         }
         // Cache miss ⇒ a real bcrypt verify. Gate it on the limiter (a locked-out user is refused
         // even with the right password) and count only failures.
-        let ip = client_ip(&headers);
+        let ip = forwarded_for_client_ip(&headers);
         if state.limiter.check(&user, &ip).is_ok() {
             let verified_hash = u.hash.clone();
             drop(db); // bcrypt takes ~100ms of CPU; don't hold the read lock across it
             let good = match &verified_hash {
-                Some(h) => authn::verify_password_blocking(pass.clone(), h.clone()).await,
+                Some(h) => auth::verify_password_blocking(pass.clone(), h.clone()).await,
                 None => false,
             };
             if !good {
@@ -103,14 +104,14 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
     }
 
     // 3) Bare 401 (nginx swallows subrequest body; browsers handled by error_page redirect).
-    tracing::debug!(ip = %client_ip(&headers), "auth denied → 401");
+    tracing::debug!(ip = %forwarded_for_client_ip(&headers), "auth denied → 401");
     Ok(StatusCode::UNAUTHORIZED.into_response())
 }
 
 /// Landing page at the base-path root (`/`): links to /account and /admin. Public — the linked
 /// pages enforce their own access (account redirects to login; admin shows the 403 page).
 pub(super) async fn index_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
-    let lang = match current_claims(&headers, &state) {
+    let lang = match get_and_validate_token_claims(&headers, &state) {
         Some(claims) => {
             let db = state.db.read().await;
             lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub)
@@ -161,13 +162,13 @@ pub(super) async fn login_submit(
     headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Handler {
-    if !origin_ok(&headers) {
+    if !csrf_origin_ok(&headers) {
         tracing::debug!(user = %form.username, "POST login rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
     let lang = lang_of(&state, &headers, None, ""); // no authenticated user yet
     let rd = form.rd.unwrap_or_default();
-    let ip = client_ip(&headers);
+    let ip = forwarded_for_client_ip(&headers);
     tracing::debug!(user = %form.username, ip = %ip, "POST login attempt");
     // Reject malformed usernames before they touch the limiter (bounds limiter-map growth from
     // sprayed junk). Same generic message as a wrong password — it leaks nothing.
@@ -191,7 +192,7 @@ pub(super) async fn login_submit(
         };
         return render_login(&state, &lang, rd, Some(msg), form.username.clone());
     }
-    ensure_fresh(&state).await?;
+    ensure_db_fresh(&state).await?;
 
     // Floor the failure path's latency below: an unknown user runs no bcrypt and would otherwise
     // answer faster than a wrong password, leaking which usernames exist. Measure across read+verify.
@@ -201,7 +202,7 @@ pub(super) async fn login_submit(
         db.users.get(&form.username).and_then(|u| u.hash.clone())
     };
     let good = match &hash {
-        Some(h) => authn::verify_password_blocking(form.password.clone(), h.clone()).await,
+        Some(h) => auth::verify_password_blocking(form.password.clone(), h.clone()).await,
         None => false,
     };
     if !good {
@@ -227,9 +228,9 @@ pub(super) async fn login_submit(
 
     // Opt-in: rehash an entry not in the configured algorithm now that we hold the plaintext.
     if state.cfg.upgrade_hash_on_login
-        && authn::needs_rehash(&verified_hash, state.cfg.password_hash)
+        && auth::needs_rehash(&verified_hash, state.cfg.password_hash)
         && let Ok(new_hash) =
-            authn::hash_password_blocking(form.password.clone(), state.cfg.password_hash).await
+            auth::hash_password_blocking(form.password.clone(), state.cfg.password_hash).await
         && state
             .db
             .write()
@@ -260,16 +261,20 @@ pub(super) async fn login_submit(
         let extra = eval_jwt_claims(&state, user, &form.username)?;
         (fp, extra)
     };
-    let claims = session::new_session(
+    let claims = token::new_session_claims(
         &form.username,
         vec!["pw".into()],
         pwd_fp,
         extra,
-        session::now(),
+        token::now(),
         state.cfg.session_idle_hours,
     );
-    let token = session::mint(&claims, &state.keys)?;
-    let target = if valid_rd(&rd) { rd } else { "/".to_string() };
+    let token = token::mint_jwt(&claims, &state.keys)?;
+    let target = if valid_redirect(&rd) {
+        rd
+    } else {
+        "/".to_string()
+    };
     tracing::debug!(user = %form.username, target = %target, "login: session minted, redirecting");
     let mut resp = Redirect::to(&target).into_response();
     resp.headers_mut()
@@ -280,7 +285,7 @@ pub(super) async fn login_submit(
 pub(super) async fn logout_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
     // Confirm page needs the current identity for "signed in as <user>". Not logged in => nothing
     // to confirm; send them to login.
-    let Some(claims) = current_claims(&headers, &state) else {
+    let Some(claims) = get_and_validate_token_claims(&headers, &state) else {
         return Ok(redirect_to_login(&state, "/"));
     };
     let db = state.db.read().await;
@@ -297,7 +302,7 @@ pub(super) async fn logout_page(State(state): State<AppState>, headers: HeaderMa
 
 /// Clears the cookie and redirects to the login page (GET shows the confirm form).
 pub(super) async fn logout_submit(State(state): State<AppState>, headers: HeaderMap) -> Handler {
-    if !origin_ok(&headers) {
+    if !csrf_origin_ok(&headers) {
         tracing::debug!("POST logout rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
@@ -309,7 +314,7 @@ pub(super) async fn logout_submit(State(state): State<AppState>, headers: Header
 }
 
 pub(super) async fn account_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
-    ensure_fresh(&state).await?;
+    ensure_db_fresh(&state).await?;
     let Some(claims) = authed_claims(&headers, &state).await else {
         return Ok(redirect_to_login(&state, "/account"));
     };
@@ -338,11 +343,11 @@ pub(super) async fn account_submit(
     headers: HeaderMap,
     Form(form): Form<HashMap<String, String>>,
 ) -> Handler {
-    if !origin_ok(&headers) {
+    if !csrf_origin_ok(&headers) {
         tracing::debug!("POST account rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
-    ensure_fresh(&state).await?;
+    ensure_db_fresh(&state).await?;
     let Some(claims) = authed_claims(&headers, &state).await else {
         return Ok(redirect_to_login(&state, "/account"));
     };
@@ -373,7 +378,7 @@ pub(super) async fn account_submit(
                 .and_then(|u| u.hash.clone())
         };
         let old_ok = match &current {
-            Some(h) => authn::verify_password_blocking(old.to_string(), h.clone()).await,
+            Some(h) => auth::verify_password_blocking(old.to_string(), h.clone()).await,
             None => false,
         };
         if !old_ok {
@@ -381,8 +386,7 @@ pub(super) async fn account_submit(
         } else if newpw.len() < state.cfg.min_password_len {
             error = Some(tr(&lang, "New password is too short."));
         } else {
-            let hash =
-                authn::hash_password_blocking(newpw.clone(), state.cfg.password_hash).await?;
+            let hash = auth::hash_password_blocking(newpw.clone(), state.cfg.password_hash).await?;
             state.db.write().await.write_password(&user, &hash)?;
             // In-process writes don't bump the file mtime, so the reload-clear path won't fire —
             // drop the Basic verify cache here so the old password stops working immediately.
@@ -456,7 +460,7 @@ pub(super) async fn admin_page(State(state): State<AppState>, headers: HeaderMap
 /// the custom 403 page). Ok carries the verified claims (for the locale context); Err the
 /// early-exit response.
 async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<Claims, Response> {
-    ensure_fresh(state)
+    ensure_db_fresh(state)
         .await
         .map_err(IntoResponse::into_response)?;
     let Some(claims) = authed_claims(headers, state).await else {
@@ -492,7 +496,7 @@ pub(super) async fn admin_submit(
     headers: HeaderMap,
     Form(form): Form<HashMap<String, String>>,
 ) -> Handler {
-    if !origin_ok(&headers) {
+    if !csrf_origin_ok(&headers) {
         tracing::debug!("POST admin rejected: Origin/Host mismatch");
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
@@ -574,7 +578,7 @@ async fn save_all(
         }
         // Hash here, before the write lock is taken — bcrypt/argon2 are too slow to run under it.
         let password_hash = match password {
-            Some(p) => Some(authn::hash_password_blocking(p, state.cfg.password_hash).await?),
+            Some(p) => Some(auth::hash_password_blocking(p, state.cfg.password_hash).await?),
             None => None,
         };
         let fields = collect_fields(&state.cfg, form, |n| format!("f_{n}[{old}]"), |_| true);
@@ -644,7 +648,7 @@ async fn add_one(
     if pw.len() < state.cfg.min_password_len {
         return Ok(Err(tr(lang, "Password is too short.")));
     }
-    let hash = authn::hash_password_blocking(pw.clone(), state.cfg.password_hash).await?;
+    let hash = auth::hash_password_blocking(pw.clone(), state.cfg.password_hash).await?;
     // Profile fields submitted alongside the new user (`f_<name>`); skip the sidecar write
     // entirely when the schema is empty so we don't leave a bare `[users."x"]` table.
     let fields = collect_fields(&state.cfg, form, |n| format!("f_{n}"), |_| true);

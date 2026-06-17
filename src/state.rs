@@ -14,7 +14,7 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::config::{Config, FieldType};
+use crate::config::Config;
 
 pub struct UserDb {
     pub users: BTreeMap<String, User>,
@@ -78,7 +78,7 @@ impl UserDb {
     }
 
     /// Re-read both files if either's mtime changed since last load. Returns true on reload;
-    /// the caller clears the authn verify-cache when it does.
+    /// the caller clears the auth verify-cache when it does.
     pub fn reload_if_changed(&mut self) -> anyhow::Result<bool> {
         if mtime(&self.htpasswd_path) == self.htpasswd_mtime
             && mtime(&self.sidecar_path) == self.sidecar_mtime
@@ -121,7 +121,9 @@ impl UserDb {
     /// Backs `user check`'s exit code 2.
     pub fn schema_errors(&self, name: &str) -> Vec<String> {
         let raw = self.sidecar.users.get(name);
-        effective_fields(&self.cfg, raw.unwrap_or(&toml::Table::new())).1
+        self.cfg
+            .resolve_fields(raw.unwrap_or(&toml::Table::new()))
+            .1
     }
 
     /// Every write method mutates the file(s) under the lock and then re-derives all in-memory
@@ -225,7 +227,7 @@ fn build_users(cfg: &Config, htpasswd_text: &str, sidecar: &Sidecar) -> BTreeMap
         .map(|name| {
             let hash = hashes.get(name).cloned();
             let raw = sidecar.users.get(name).unwrap_or(&empty);
-            let (fields, errors) = effective_fields(cfg, raw);
+            let (fields, errors) = cfg.resolve_fields(raw);
             for e in &errors {
                 tracing::warn!("user {name}: {e}");
             }
@@ -237,46 +239,6 @@ fn build_users(cfg: &Config, htpasswd_text: &str, sidecar: &Sidecar) -> BTreeMap
             (name.clone(), user)
         })
         .collect()
-}
-
-/// Resolve schema fields against a raw sidecar table. Every field always gets a value
-/// (sidecar value > config default > type-zero) so CEL exprs are total over `fields.*` and a
-/// missing/typo'd field never 500s /auth. Type mismatches and missing required fields are
-/// returned as advisory problems (they back `user check` exit 2 and the admin UI).
-fn effective_fields(
-    cfg: &Config,
-    raw: &toml::Table,
-) -> (BTreeMap<String, toml::Value>, Vec<String>) {
-    let mut out = BTreeMap::new();
-    let mut errors = Vec::new();
-    for (name, spec) in &cfg.fields {
-        let value = match raw.get(name) {
-            Some(v) if spec.type_.matches(v) => v.clone(),
-            Some(_) => {
-                errors.push(format!("field `{name}` is not a {:?}", spec.type_));
-                fallback(spec.type_, spec.default.as_ref())
-            }
-            None => {
-                if spec.required && spec.default.is_none() {
-                    errors.push(format!("required field `{name}` is missing"));
-                }
-                fallback(spec.type_, spec.default.as_ref())
-            }
-        };
-        out.insert(name.clone(), value);
-    }
-    (out, errors)
-}
-
-/// Config default if present, else the type's zero value (false / "").
-fn fallback(t: FieldType, default: Option<&toml::Value>) -> toml::Value {
-    if let Some(d) = default {
-        return d.clone();
-    }
-    match t {
-        FieldType::Bool => toml::Value::Boolean(false),
-        FieldType::String | FieldType::Email => toml::Value::String(String::new()),
-    }
 }
 
 /// Parse `user:hash` lines into a name→hash map. Blank lines and lines without a `:` are skipped.
@@ -465,7 +427,7 @@ mod tests {
         let mut db = UserDb::load(cfg_with_fields(htpasswd.clone())).unwrap();
 
         let hash =
-            crate::authn::hash_password("hunter2", crate::config::PasswordAlgo::Bcrypt).unwrap();
+            crate::auth::hash_password("hunter2", crate::config::PasswordAlgo::Bcrypt).unwrap();
         db.write_password("dave", &hash).unwrap();
         let file = fs::read_to_string(&htpasswd).unwrap();
         assert!(file.starts_with("dave:$2"));

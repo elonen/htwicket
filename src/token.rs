@@ -3,7 +3,7 @@
 //! Stateless; the only revocation is pwd_fp mismatch (password change rotates it).
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 
 use anyhow::Context;
@@ -34,6 +34,7 @@ impl Keys {
     }
 }
 
+/// Session token claims
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: String,
@@ -58,7 +59,7 @@ pub fn now() -> u64 {
 }
 
 /// Fresh login: iat = orig_iat = now, exp = now + session_idle_hours.
-pub fn new_session(
+pub fn new_session_claims(
     sub: &str,
     factors: Vec<String>,
     pwd_fp: Option<String>,
@@ -78,23 +79,13 @@ pub fn new_session(
     }
 }
 
-/// Sliding re-mint: new iat/exp, everything else (orig_iat, factors, pwd_fp, baked claims) preserved.
-/// Not a re-login — jwt-claims stay as baked at login (headers are the fresh channel).
-pub fn remint(prev: &Claims, now: u64, session_idle_hours: u32) -> Claims {
-    Claims {
-        iat: now,
-        exp: now + session_idle_hours as u64 * 3600,
-        ..prev.clone()
-    }
-}
-
-pub fn mint(claims: &Claims, keys: &Keys) -> anyhow::Result<String> {
+pub fn mint_jwt(claims: &Claims, keys: &Keys) -> anyhow::Result<String> {
     Ok(encode(&Header::new(Algorithm::HS256), claims, &keys.enc)?)
 }
 
 /// Validate signature + exp + iss, pinning HS256 (token-header alg cannot downgrade us), then
 /// enforce the absolute cap: orig_iat + session_max_days. Any failure => None (no session).
-pub fn verify(token: &str, keys: &Keys, session_max_days: u32) -> Option<Claims> {
+pub fn verify_jwt(token: &str, keys: &Keys, session_max_days: u32) -> Option<Claims> {
     let data = decode::<Claims>(token, &keys.dec, &keys.validation).ok()?;
     let claims = data.claims;
     if claims.orig_iat + session_max_days as u64 * 86400 < now() {
@@ -104,8 +95,18 @@ pub fn verify(token: &str, keys: &Keys, session_max_days: u32) -> Option<Claims>
 }
 
 /// Sliding renewal: re-mint once more than half of session_idle_hours has elapsed since iat.
-pub fn needs_remint(claims: &Claims, now: u64, session_idle_hours: u32) -> bool {
+pub fn time_to_extend(claims: &Claims, now: u64, session_idle_hours: u32) -> bool {
     now.saturating_sub(claims.iat) > (session_idle_hours as u64 * 3600) / 2
+}
+
+/// Sliding re-mint: new iat/exp, everything else (orig_iat, factors, pwd_fp, baked claims) preserved.
+/// Not a re-login — jwt-claims stay as baked at login (headers are the fresh channel).
+pub fn extend_validity(prev: &Claims, now: u64, session_idle_hours: u32) -> Claims {
+    Claims {
+        iat: now,
+        exp: now + session_idle_hours as u64 * 3600,
+        ..prev.clone()
+    }
 }
 
 /// Load jwt_secret from config, else read/create {state_dir}/jwt_secret (32 random bytes, 0600).
@@ -128,7 +129,8 @@ pub fn load_or_create_secret(cfg: &crate::config::Config) -> anyhow::Result<Vec<
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             fs::create_dir_all(&cfg.state_dir)
                 .with_context(|| format!("creating state dir {}", cfg.state_dir.display()))?;
-            let secret = random_bytes(32)?;
+            let mut secret = vec![0u8; 32];
+            getrandom::fill(&mut secret)?;
             // Create 0600 atomically (mode set at open) so the secret is never briefly world-readable.
             let mut f = fs::OpenOptions::new()
                 .write(true)
@@ -145,12 +147,6 @@ pub fn load_or_create_secret(cfg: &crate::config::Config) -> anyhow::Result<Vec<
     }
 }
 
-pub(crate) fn random_bytes(n: usize) -> anyhow::Result<Vec<u8>> {
-    let mut buf = vec![0u8; n];
-    fs::File::open("/dev/urandom")?.read_exact(&mut buf)?;
-    Ok(buf)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,7 +158,7 @@ mod tests {
     }
 
     fn claims(now: u64) -> Claims {
-        new_session(
+        new_session_claims(
             "alice",
             vec!["pw".into()],
             Some("deadbeefdeadbeef".into()),
@@ -175,8 +171,8 @@ mod tests {
     #[test]
     fn mint_verify_roundtrip() {
         let c = claims(now());
-        let token = mint(&c, &keys()).unwrap();
-        let got = verify(&token, &keys(), 7).unwrap();
+        let token = mint_jwt(&c, &keys()).unwrap();
+        let got = verify_jwt(&token, &keys(), 7).unwrap();
         assert_eq!(got.sub, "alice");
         assert_eq!(got.orig_iat, c.orig_iat);
         assert_eq!(got.pwd_fp.as_deref(), Some("deadbeefdeadbeef"));
@@ -184,8 +180,8 @@ mod tests {
 
     #[test]
     fn wrong_secret_rejected() {
-        let token = mint(&claims(now()), &keys()).unwrap();
-        assert!(verify(&token, &Keys::new(b"other-secret"), 7).is_none());
+        let token = mint_jwt(&claims(now()), &keys()).unwrap();
+        assert!(verify_jwt(&token, &Keys::new(b"other-secret"), 7).is_none());
     }
 
     #[test]
@@ -193,25 +189,25 @@ mod tests {
         let mut c = claims(now());
         c.iat = now() - 7200;
         c.exp = now() - 3600; // well past the 60s default leeway
-        let token = mint(&c, &keys()).unwrap();
-        assert!(verify(&token, &keys(), 7).is_none());
+        let token = mint_jwt(&c, &keys()).unwrap();
+        assert!(verify_jwt(&token, &keys(), 7).is_none());
     }
 
     #[test]
     fn absolute_cap_rejects_old_origin() {
         let mut c = claims(now());
         c.orig_iat = now() - 100 * 86400; // 100 days ago, but exp still fresh
-        let token = mint(&c, &keys()).unwrap();
-        assert!(verify(&token, &keys(), 7).is_none());
-        assert!(verify(&token, &keys(), 365).is_some());
+        let token = mint_jwt(&c, &keys()).unwrap();
+        assert!(verify_jwt(&token, &keys(), 7).is_none());
+        assert!(verify_jwt(&token, &keys(), 365).is_some());
     }
 
     #[test]
     fn wrong_issuer_rejected() {
         let mut c = claims(now());
         c.iss = "evil".into();
-        let token = mint(&c, &keys()).unwrap();
-        assert!(verify(&token, &keys(), 7).is_none());
+        let token = mint_jwt(&c, &keys()).unwrap();
+        assert!(verify_jwt(&token, &keys(), 7).is_none());
     }
 
     #[test]
@@ -223,16 +219,16 @@ mod tests {
             &EncodingKey::from_secret(SECRET),
         )
         .unwrap();
-        assert!(verify(&token, &keys(), 7).is_none());
+        assert!(verify_jwt(&token, &keys(), 7).is_none());
     }
 
     #[test]
     fn remint_threshold_and_preserves_origin() {
         let start = 1_000_000u64;
         let c = claims(start);
-        assert!(!needs_remint(&c, start + 60, 12)); // fresh
-        assert!(needs_remint(&c, start + 7 * 3600, 12)); // past half of 12h
-        let r = remint(&c, start + 7 * 3600, 12);
+        assert!(!time_to_extend(&c, start + 60, 12)); // fresh
+        assert!(time_to_extend(&c, start + 7 * 3600, 12)); // past half of 12h
+        let r = extend_validity(&c, start + 7 * 3600, 12);
         assert_eq!(r.orig_iat, c.orig_iat);
         assert!(r.iat > c.iat && r.exp > c.exp);
     }

@@ -86,3 +86,61 @@ fn login_form_has_heading_and_real_labels() {
         "fields should use labels, not placeholders:\n{body}"
     );
 }
+
+#[test]
+fn login_when_already_signed_in_offers_continue_or_signout() {
+    let srv = spawn("");
+    let c = client();
+    c.post(format!("{}/login", srv.base))
+        .form(&[("username", "bob"), ("password", PW)])
+        .send()
+        .unwrap();
+
+    // No redirect target: name the user + a sign-out action, but no re-login password field.
+    let body = c
+        .get(format!("{}/login", srv.base))
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(
+        body.contains("bob"),
+        "should name the signed-in user:\n{body}"
+    );
+    assert!(
+        !body.contains(r#"name="password""#),
+        "already-signed-in page should not re-prompt for a password:\n{body}"
+    );
+    assert!(
+        body.contains(r#"action="/htwicket/logout""#),
+        "should offer a sign-out form posting to /logout:\n{body}"
+    );
+    assert!(
+        !body.contains(r#"href="/app/dashboard""#),
+        "no redirect target → no continue link:\n{body}"
+    );
+
+    // A valid same-origin redirect target enables a Continue link straight to it.
+    let body = c
+        .get(format!("{}/login?rd=/app/dashboard", srv.base))
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(
+        body.contains(r#"href="/app/dashboard""#),
+        "valid rd should produce a Continue link:\n{body}"
+    );
+
+    // An open-redirect attempt is rejected (valid_redirect): no continue link to it.
+    let body = c
+        .get(format!("{}/login?rd=//evil.example", srv.base))
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+    assert!(
+        !body.contains("evil.example"),
+        "open-redirect rd must not become a Continue link:\n{body}"
+    );
+}

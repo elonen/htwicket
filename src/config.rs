@@ -209,6 +209,14 @@ pub struct Overrides {
 }
 
 impl Config {
+    /// Absolute path to one of htwicket's own pages: joins `route` onto `base_path`, e.g.
+    /// `self_url("/account")` -> `/htwicket/account`. Use for every in-app link/redirect target so it
+    /// resolves under the proxy mount, not the origin root (where the proxied app lives). `route` must
+    /// start with `/`; `base_path` carries no trailing one.
+    pub fn self_url(&self, route: &str) -> String {
+        format!("{}{route}", self.base_path)
+    }
+
     /// Schema fields in display order for /admin and /account: sorted by each field's `sort_key`
     /// (falling back to its name when unset), ties broken by name. `cfg.fields` is a name-sorted
     /// BTreeMap, so with no `sort_key` set this is just the current alphabetical order.

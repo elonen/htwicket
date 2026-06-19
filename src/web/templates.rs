@@ -35,6 +35,11 @@ impl Tr for LogoutTemplate {
         &self.lang
     }
 }
+impl Tr for SignedInTemplate {
+    fn lang(&self) -> &str {
+        &self.lang
+    }
+}
 impl Tr for AccountTemplate {
     fn lang(&self) -> &str {
         &self.lang
@@ -90,6 +95,22 @@ pub struct LogoutTemplate {
     pub insecure_cookies: bool,
     pub app_title_html: Option<String>,
     pub username: String,
+}
+
+/// Shown at /login when the visitor already has a valid session: offer to continue to the
+/// redirect target (if any) or sign out, instead of a pointless re-login form.
+#[derive(Template)]
+#[template(path = "signed_in.html")]
+pub struct SignedInTemplate {
+    pub lang: String,
+    pub insecure_cookies: bool,
+    pub app_title_html: Option<String>,
+    /// cfg.base_path, for the sign-out form's POST target.
+    pub base_path: String,
+    pub username: String,
+    /// A validated same-origin redirect target, if the login URL carried one — enables the
+    /// "Continue to service" button. None → only the sign-out action is shown.
+    pub rd: Option<String>,
 }
 
 #[derive(Template)]

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ tr("Already signed in") }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h2 class="page-title">{{ tr("Already signed in") }}</h2>
+  <p class="lede">{{ tr("You are signed in as") }} <strong class="ident">{{ username }}</strong>.</p>
+  {# Continue is a plain GET link to the validated redirect target; Sign out POSTs to /logout #}
+  {# (a <form>, so it can't be an <a>). With no redirect target, Sign out is the only action. #}
+  <form method="post" action="{{ base_path }}/logout">
+    <div class="actions">
+      {% if let Some(rd) = rd %}
+      <a class="btn" href="{{ rd }}">{{ tr("Continue to service") }}</a>
+      <button type="submit" class="btn-secondary">{{ tr("Sign out") }}</button>
+      {% else %}
+      <button type="submit">{{ tr("Sign out") }}</button>
+      {% endif %}
+    </div>
+  </form>
+</section>
+{% endblock %}

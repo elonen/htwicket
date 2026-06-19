@@ -20,7 +20,9 @@ use super::helpers::{
     forwarded_for_client_ip, get_and_validate_token_claims, lang_of, redirect_to_login, render,
     valid_redirect,
 };
-use super::templates::{AccountTemplate, ForbiddenTemplate, IndexTemplate, LogoutTemplate};
+use super::templates::{
+    AccountTemplate, ForbiddenTemplate, IndexTemplate, LogoutTemplate, SignedInTemplate,
+};
 use super::views::{
     account_field_views, auth_response_headers, collect_fields, eval_jwt_claims, field_editable,
     is_superadmin, render_admin, render_login,
@@ -138,6 +140,24 @@ pub(super) async fn login_page(
     Query(q): Query<RdQuery>,
 ) -> Handler {
     let rd = q.rd.unwrap_or_default();
+    // Already signed in? Offer continue/sign-out instead of a pointless re-login form. Uses the
+    // same revocation gate as /auth (authed_claims), so a stale cookie (deleted user / rotated
+    // password) falls through to the form rather than claiming a dead session is live.
+    ensure_db_fresh(&state).await?;
+    if let Some(claims) = authed_claims(&headers, &state).await {
+        let db = state.db.read().await;
+        let lang = lang_of(&state, &headers, db.users.get(&claims.sub), &claims.sub);
+        drop(db);
+        tracing::debug!(user = %claims.sub, rd = %rd, "GET login page: already signed in");
+        return render(SignedInTemplate {
+            lang,
+            insecure_cookies: state.cfg.insecure_cookies,
+            app_title_html: state.cfg.app_title_html.clone(),
+            base_path: state.cfg.base_path.clone(),
+            username: claims.sub,
+            rd: valid_redirect(&rd).then_some(rd),
+        });
+    }
     tracing::debug!(rd = %rd, "GET login page");
     render_login(
         &state,
@@ -307,7 +327,7 @@ pub(super) async fn logout_submit(State(state): State<AppState>, headers: Header
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
     tracing::debug!("POST logout: clearing session cookie");
-    let mut resp = Redirect::to(&format!("{}/login", state.cfg.base_path)).into_response();
+    let mut resp = Redirect::to(&state.cfg.self_url("/login")).into_response();
     resp.headers_mut()
         .insert(header::SET_COOKIE, cookie_header("", &state.cfg)?);
     Ok(resp)
@@ -316,11 +336,11 @@ pub(super) async fn logout_submit(State(state): State<AppState>, headers: Header
 pub(super) async fn account_page(State(state): State<AppState>, headers: HeaderMap) -> Handler {
     ensure_db_fresh(&state).await?;
     let Some(claims) = authed_claims(&headers, &state).await else {
-        return Ok(redirect_to_login(&state, "/account"));
+        return Ok(redirect_to_login(&state, &state.cfg.self_url("/account")));
     };
     let db = state.db.read().await;
     let Some(user) = db.users.get(&claims.sub) else {
-        return Ok(redirect_to_login(&state, "/account"));
+        return Ok(redirect_to_login(&state, &state.cfg.self_url("/account")));
     };
     tracing::debug!(user = %claims.sub, "GET account page");
     render(AccountTemplate {
@@ -349,7 +369,7 @@ pub(super) async fn account_submit(
     }
     ensure_db_fresh(&state).await?;
     let Some(claims) = authed_claims(&headers, &state).await else {
-        return Ok(redirect_to_login(&state, "/account"));
+        return Ok(redirect_to_login(&state, &state.cfg.self_url("/account")));
     };
     let user = claims.sub.clone();
     tracing::debug!(
@@ -464,7 +484,7 @@ async fn require_superadmin(state: &AppState, headers: &HeaderMap) -> Result<Cla
         .await
         .map_err(IntoResponse::into_response)?;
     let Some(claims) = authed_claims(headers, state).await else {
-        return Err(redirect_to_login(state, "/admin"));
+        return Err(redirect_to_login(state, &state.cfg.self_url("/admin")));
     };
     let db = state.db.read().await;
     if !is_superadmin(state, db.users.get(&claims.sub), &claims.sub) {

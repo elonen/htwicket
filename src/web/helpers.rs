@@ -109,7 +109,7 @@ pub(super) fn forwarded_for_client_ip(headers: &HeaderMap) -> String {
 }
 
 pub(super) fn redirect_to_login(state: &AppState, rd: &str) -> Response {
-    Redirect::to(&format!("{}/login?rd={}", state.cfg.base_path, rd)).into_response()
+    Redirect::to(&format!("{}?rd={rd}", state.cfg.self_url("/login"))).into_response()
 }
 
 /// Session cookie header; an empty token clears the cookie (Max-Age=0).

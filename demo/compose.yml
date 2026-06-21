@@ -54,8 +54,9 @@ services:
 #   secrets:
 #     htwicket_jwt: { file: ./secrets/htwicket_jwt }
 # and a one-shot `htwicket-init` service running
-#   user add admin --if-missing --password-env HTWICKET_ADMIN_PASSWORD
-# that the htwicket service depends_on (condition: service_completed_successfully).
+#   user add admin --if-missing --password-env HTWICKET_ADMIN_PASSWORD --random
+# that the htwicket service depends_on (condition: service_completed_successfully). With --random,
+# an unset/empty HTWICKET_ADMIN_PASSWORD generates a password and prints it to the init logs.
 
 volumes:
   data:

@@ -107,12 +107,14 @@ stack; adapt them for production:
    ```yaml
    htwicket-init:
      image: ghcr.io/elonen/htwicket:<version>
-     command: ["user", "add", "admin", "--if-missing", "--password-env", "HTWICKET_ADMIN_PASSWORD"]
+     command: ["user", "add", "admin", "--if-missing", "--password-env", "HTWICKET_ADMIN_PASSWORD", "--random"]
      environment: { HTWICKET_ADMIN_PASSWORD: ${HTWICKET_ADMIN_PASSWORD} }
      volumes: ["data:/data", "./htwicket.toml:/etc/htwicket.toml:ro"]
    ```
 
-   `--if-missing` makes re-runs a no-op, so it's safe on every `up`.
+   `--if-missing` makes re-runs a no-op, so it's safe on every `up`. Set `HTWICKET_ADMIN_PASSWORD`
+   to choose the password; leave it unset and `--random` generates one and prints it to the init
+   container's logs (drop `--random` to make a missing password a hard error instead).
 6. **Real backend** — swap the PHP `app` for your upstream; point `location /`'s `proxy_pass` at it
    and add one `auth_request_set`/`proxy_set_header` pair per `[headers.*]` forwarded.
 
@@ -129,8 +131,8 @@ exprs to compile, so a broken `[headers.*]` can't lock you out of fixing it).
 
 | command | does |
 |---|---|
-| `htwicket user add <name>` | add user; password from tty/stdin, `--random` (prints it), or `--password-env VAR`; `--if-missing` makes a re-run on an existing user a no-op (idempotent bootstrap) |
-| `htwicket user passwd <name>` | set password; tty/stdin, `--random`, or `--password-env VAR` |
+| `htwicket user add <name>` | add user; password from tty/stdin, `--random` (prints it), or `--password-env VAR` (combine with `--random` to generate one when VAR is unset/empty); `--if-missing` makes a re-run on an existing user a no-op (idempotent bootstrap) |
+| `htwicket user passwd <name>` | set password; tty/stdin, `--random`, or `--password-env VAR` (combine with `--random` to generate one when VAR is unset/empty) |
 | `htwicket user del <name>` | remove from both files |
 | `htwicket user list` | list usernames |
 | `htwicket user check <name>` | exit `0` ok+password set, `1` missing, `2` sidecar fields fail schema |

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Context as _, bail};
+use anyhow::bail;
 use clap::Subcommand;
 
 use crate::config::Config;
@@ -13,8 +13,10 @@ pub enum UserAction {
         name: String,
         #[arg(long)]
         random: bool,
-        /// Read the password from this env var (non-interactive; keeps it off argv/`ps`)
-        #[arg(long, value_name = "VAR", conflicts_with = "random")]
+        /// Read the password from this env var (non-interactive; keeps it off argv/`ps`). A
+        /// non-empty value takes precedence over --random; if unset/empty, add --random to fall
+        /// back to a generated password (otherwise it's an error).
+        #[arg(long, value_name = "VAR")]
         password_env: Option<String>,
         /// No-op (exit 0) if the user already exists — idempotent bootstrap for containers
         #[arg(long)]
@@ -25,8 +27,10 @@ pub enum UserAction {
         name: String,
         #[arg(long)]
         random: bool,
-        /// Read the password from this env var (non-interactive; keeps it off argv/`ps`)
-        #[arg(long, value_name = "VAR", conflicts_with = "random")]
+        /// Read the password from this env var (non-interactive; keeps it off argv/`ps`). A
+        /// non-empty value takes precedence over --random; if unset/empty, add --random to fall
+        /// back to a generated password (otherwise it's an error).
+        #[arg(long, value_name = "VAR")]
         password_env: Option<String>,
     },
     Del {
@@ -120,24 +124,40 @@ fn require_valid(name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Generate a strong random password, print it (so a bootstrap operator can recover it from the
+/// logs), and return it. Shared by `--random` and the `--password-env` + `--random` unset/empty
+/// fallback.
+fn generate_random_password() -> anyhow::Result<String> {
+    let mut raw = [0u8; 16];
+    getrandom::fill(&mut raw)?;
+    let pw: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+    println!("generated password: {pw}");
+    Ok(pw)
+}
+
 /// `--random`: generate a strong password, print it, and use it. `--password-env VAR`: read it
-/// verbatim from the environment (non-interactive, off argv — for one-shot container bootstrap).
-/// Otherwise prompt without echo (also reads a piped line, e.g. `echo pw | htwicket user passwd alice`).
+/// verbatim from the environment (non-interactive, off argv — for one-shot container bootstrap). A
+/// non-empty VAR wins even over `--random`; an unset/empty VAR is an error unless `--random` is also
+/// given, in which case it falls back to a generated password (so an unconfigured bootstrap still
+/// works). Otherwise prompt without echo (also reads a piped line, e.g. `echo pw | htwicket user passwd alice`).
 fn read_password(
     random: bool,
     password_env: Option<&str>,
     min_len: usize,
 ) -> anyhow::Result<String> {
-    if random {
-        let mut raw = [0u8; 16];
-        getrandom::fill(&mut raw)?;
-        let pw: String = raw.iter().map(|b| format!("{b:02x}")).collect();
-        println!("generated password: {pw}");
-        return Ok(pw);
-    }
     use std::io::IsTerminal;
     let pw = if let Some(var) = password_env {
-        std::env::var(var).with_context(|| format!("reading password from ${var}"))?
+        // A non-empty value wins (even over --random). Unset (Err) or empty falls back to a
+        // generated password only when --random is also given; otherwise it's a hard error.
+        match std::env::var(var) {
+            Ok(v) if !v.is_empty() => v,
+            _ if random => return generate_random_password(),
+            _ => bail!(
+                "env var ${var} is unset or empty; set it, or also pass --random to generate one"
+            ),
+        }
+    } else if random {
+        return generate_random_password();
     } else if std::io::stdin().is_terminal() {
         rpassword::prompt_password("new password: ")? // hidden echo
     } else {
@@ -150,4 +170,63 @@ fn read_password(
         bail!("password too short (minimum {min_len} characters)");
     }
     Ok(pw)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `generate_random_password` yields 16 bytes as hex.
+    const RANDOM_LEN: usize = 32;
+
+    #[test]
+    fn password_env_set_is_used_verbatim() {
+        // Unique var name: std::env is process-global and tests run in parallel.
+        let var = "HTWICKET_TEST_PW_SET";
+        unsafe { std::env::set_var(var, "correcthorse") };
+        assert_eq!(read_password(false, Some(var), 8).unwrap(), "correcthorse");
+        unsafe { std::env::remove_var(var) };
+    }
+
+    #[test]
+    fn password_env_set_overrides_random() {
+        // A non-empty value wins even when --random is also passed.
+        let var = "HTWICKET_TEST_PW_OVERRIDE";
+        unsafe { std::env::set_var(var, "correcthorse") };
+        assert_eq!(read_password(true, Some(var), 8).unwrap(), "correcthorse");
+        unsafe { std::env::remove_var(var) };
+    }
+
+    #[test]
+    fn password_env_unset_without_random_errors() {
+        // A name we never set → var() is Err → hard error without --random.
+        let var = "HTWICKET_TEST_PW_UNSET";
+        assert!(read_password(false, Some(var), 8).is_err());
+    }
+
+    #[test]
+    fn password_env_empty_without_random_errors() {
+        let var = "HTWICKET_TEST_PW_EMPTY";
+        unsafe { std::env::set_var(var, "") };
+        assert!(read_password(false, Some(var), 8).is_err());
+        unsafe { std::env::remove_var(var) };
+    }
+
+    #[test]
+    fn password_env_unset_with_random_falls_back() {
+        // --random alongside --password-env → generated fallback when the var is unset.
+        let var = "HTWICKET_TEST_PW_UNSET_RANDOM";
+        let pw = read_password(true, Some(var), 8).unwrap();
+        assert_eq!(pw.len(), RANDOM_LEN);
+    }
+
+    #[test]
+    fn password_env_empty_with_random_falls_back() {
+        // Compose passes an unconfigured password as "" → generated fallback with --random.
+        let var = "HTWICKET_TEST_PW_EMPTY_RANDOM";
+        unsafe { std::env::set_var(var, "") };
+        let pw = read_password(true, Some(var), 8).unwrap();
+        assert_eq!(pw.len(), RANDOM_LEN);
+        unsafe { std::env::remove_var(var) };
+    }
 }

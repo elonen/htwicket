@@ -63,4 +63,14 @@ fn user_add_if_missing_and_password_env() {
     // A too-short env password is rejected (default min length 8) and no user is created.
     assert_ne!(add(&["add", "dave", "--password-env", "PW"], "short"), 0);
     assert_eq!(check_exit(&srv.config, "dave"), 1);
+
+    // --password-env with an empty/unconfigured var is a hard error on its own...
+    assert_ne!(add(&["add", "erin", "--password-env", "PW"], ""), 0);
+    assert_eq!(check_exit(&srv.config, "erin"), 1);
+    // ...but adding --random falls back to a generated password (clap allows both flags together).
+    assert_eq!(
+        add(&["add", "erin", "--password-env", "PW", "--random"], ""),
+        0
+    );
+    assert_eq!(check_exit(&srv.config, "erin"), 0);
 }

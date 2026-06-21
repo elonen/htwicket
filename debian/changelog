@@ -1,3 +1,10 @@
+htwicket (0.1.1) unstable; urgency=low
+
+  * --password-env: an empty/unset env var now falls back to a random
+    password when --random is also given.
+
+ -- Jarno Elonen <elonen@iki.fi>  Sun, 21 Jun 2026 13:32:24 +0300
+
 htwicket (0.1.0) unstable; urgency=low
 
   * Initial release.

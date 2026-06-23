@@ -1,4 +1,4 @@
-# htwicket - Modernized .htaccess user management web UI & CLI
+# htwicket - Modernized .htaccess user management web UI, CLI with JWT verifier
 
 Small auth gateway + user manager for `auth_request` (nginx, or other reverse proxies).
 Provides a web GUI for editing `.htpasswd`, upgrading its hashes to a modern algorithm,

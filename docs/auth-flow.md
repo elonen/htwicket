@@ -1,7 +1,7 @@
 # Auth flow
 
 How a request gets authenticated, and how the session lives and dies. Nginx is the only direct
-peer; htwicket never faces the internet itself. For the nginx config see
+peer; HTWicket never faces the internet itself. For the nginx config see
 [deployment.md](deployment.md); for the attacker's-eye view see [security.md](security.md).
 
 ## The big picture
@@ -10,12 +10,12 @@ peer; htwicket never faces the internet itself. For the nginx config see
 browser ──► nginx (TLS) ──► protected location
                               │  auth_request subrequest
                               ▼
-                          htwicket GET /auth ──► 200 + X-Remote-User-* headers ──► backend
+                          HTWicket GET /auth ──► 200 + X-Remote-User-* headers ──► backend
                                             └──► 401 ──► nginx error_page ──► 302 /login?rd=…
 ```
 
 Nginx fires an internal `auth_request` to `/auth` for every hit on a protected location. **200** =
-let the request through, copying htwicket's `X-Remote-User-*` headers to the backend. **401** =
+let the request through, copying HTWicket's `X-Remote-User-*` headers to the backend. **401** =
 nginx redirects the browser to the login form, remembering the original URL in `rd` (redirect after login).
 
 ## Per-request: `GET /auth`
@@ -65,7 +65,7 @@ falls back to `/`. Wrong password → record failure, re-render with the usernam
 Cookie `htwicket_session`: `HttpOnly; SameSite=Lax; Path=/; Max-Age=<idle>` plus `Secure` unless
 `insecure_cookies` is configured (for localhost / HTTP testing).
 Signed **HS256, pinned** — the token header's `alg` is ignored, so a token can't
-downgrade the verifier. Stateless: htwicket keeps no server-side session list.
+downgrade the verifier. Stateless: HTWicket keeps no server-side session list.
 
 <details>
 <summary>JWT Claims</summary>
@@ -87,7 +87,7 @@ downgrade the verifier. Stateless: htwicket keeps no server-side session list.
 
 - **Idle expiry** — `exp = iat + session_idle_hours`. Past it, the cookie is dead.
 - **Sliding re-mint** — at `/auth`, once more than *half* of `session_idle_hours` has elapsed,
-  htwicket re-mints (fresh `iat`/`exp`, everything else preserved) and returns a new `Set-Cookie`.
+  HTWicket re-mints (fresh `iat`/`exp`, everything else preserved) and returns a new `Set-Cookie`.
   An active session never expires from idle; nginx must propagate that header (deployment.md).
   A re-mint is *not* a re-login: baked `[jwt-claims.*]` stay as they were — headers are the fresh
   channel.

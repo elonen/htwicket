@@ -1,3 +1,9 @@
+htwicket (0.1.2) unstable; urgency=low
+
+  * Rename project to HTWicket (display/branding only).
+
+ -- Jarno Elonen <elonen@iki.fi>  Thu, 25 Jun 2026 12:00:00 +0300
+
 htwicket (0.1.1) unstable; urgency=low
 
   * --password-env: an empty/unset env var now falls back to a random

@@ -2,15 +2,15 @@
 
 ## Nginx configuration
 
-Htwicket sits behind nginx, which terminates TLS and is htwicket's only direct peer. Serve htwicket
+HTWicket sits behind nginx, which terminates TLS and is HTWicket's only direct peer. Serve HTWicket
 under the same `base_path` it's configured with, so `proxy_pass` needs no URL rewriting. The auth
 flow itself is explained in [auth-flow.md](auth-flow.md).
 
 ```nginx
-# htwicket's own pages (login, account, admin, …)
+# HTWicket's own pages (login, account, admin, …)
 location /htwicket/ {
     proxy_pass http://127.0.0.1:52155;
-    # Full host:port — htwicket's Origin-vs-Host CSRF check on POST needs the port that $host drops.
+    # Full host:port — HTWicket's Origin-vs-Host CSRF check on POST needs the port that $host drops.
     # Omit this and modern browsers (which send Origin on same-origin POSTs) get a 403 on login.
     proxy_set_header Host $http_host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -44,13 +44,13 @@ location @login { return 302 /htwicket/login?rd=$request_uri; }
 - One `auth_request_set` + `proxy_set_header` pair **per `[headers.*]`** you want forwarded;
   `X-Remote-User-Id` is always present.
 - The backend's identity comes only from these `X-Remote-User-*` headers, never from the
-  `htwicket_session` cookie (htwicket's private token — the app can't verify it). The cookie still
+  `htwicket_session` cookie (HTWicket's private token — the app can't verify it). The cookie still
   rides to the backend by default (`Path=/`); strip it where practical, but a blanket
   `proxy_set_header Cookie ""` also drops the app's own cookies, so selective stripping needs an
   nginx `map`/regex.
 - The `$sc` / `add_header Set-Cookie` line is what makes sliding sessions reach the browser. Drop it
   and active sessions still expire at `session_idle_hours`.
-- `X-Forwarded-For` must be set: htwicket reads its **last** entry as the client IP for rate-limiting
+- `X-Forwarded-For` must be set: HTWicket reads its **last** entry as the client IP for rate-limiting
   (the direct peer is always nginx). See [security.md](security.md).
 
 > **Caveat — Basic clients.** The `401 → 302 /login` redirect breaks challenge-response Basic auth
@@ -68,7 +68,7 @@ location @login { return 302 /htwicket/login?rd=$request_uri; }
 - a systemd unit running as `www-data`, with `StateDirectory=htwicket` → `/var/lib/htwicket` (`0700`,
   holds the auto-generated `jwt_secret`).
 
-The unit is installed **disabled and not started** — htwicket needs a configured file and at least
+The unit is installed **disabled and not started** — HTWicket needs a configured file and at least
 one user first:
 
 ```sh
@@ -85,7 +85,7 @@ load-balancer probes; the distroless container image has no `curl`, so its `HEAL
 
 The published image is `ghcr.io/elonen/htwicket` — a multi-arch ~2 MB static (musl) binary on
 distroless. [`demo/compose.yml`](../demo/compose.yml) +
-[`demo/nginx-default.conf`](../demo/nginx-default.conf) are a runnable htwicket + nginx + backend
+[`demo/nginx-default.conf`](../demo/nginx-default.conf) are a runnable HTWicket + nginx + backend
 stack; adapt them for production:
 
 1. **Image, not `build:`** — `image: ghcr.io/elonen/htwicket:<version>` (pin a tag; `latest` tracks
@@ -97,7 +97,7 @@ stack; adapt them for production:
    other paths don't: `chown 65532` those yourself.
 3. **Terminate TLS in nginx** — uncomment the `443`/`ssl` block in `nginx-default.conf` and the cert
    mount + `443:443` publish in `compose.yml`. Behind https, `insecure_cookies` stays `false` — the
-   browser judges `Secure` by its own scheme, not htwicket's plain-http listener.
+   browser judges `Secure` by its own scheme, not HTWicket's plain-http listener.
 4. **Pin the JWT key** — the demo auto-generates `jwt_secret` in the `data` volume (lost on `down -v`,
    unsharable across replicas). Mount a Compose `secret` and set
    `HTWICKET_JWT_SECRET_FILE=/run/secrets/htwicket_jwt`.
@@ -149,6 +149,6 @@ for bootstrapping, automation, and recovery.
 
 Setting `insecure_cookies = true` drops the cookie `Secure` flag and shows a persistent warning
 banner on every page. You almost never need it: behind a TLS-terminating nginx, the browser judges
-`Secure` by *its* scheme (https), not htwicket's plain-http listener — so leave it `false`. It's
+`Secure` by *its* scheme (https), not HTWicket's plain-http listener — so leave it `false`. It's
 legitimate only for localhost or an encrypted overlay (VPN/Tailscale) served over plain http. See
 [security.md](security.md).

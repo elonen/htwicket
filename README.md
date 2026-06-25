@@ -1,4 +1,4 @@
-# htwicket - Modernized .htaccess user management web UI, CLI with JWT verifier
+# HTWicket - Modernized .htaccess user management web UI, CLI with JWT verifier
 
 Small auth gateway + user manager for `auth_request` (nginx, or other reverse proxies).
 Provides a web GUI for editing `.htpasswd`, upgrading its hashes to a modern algorithm,
@@ -30,11 +30,11 @@ Admin UI for user management with custom fields:
 ## Overview graph
 
 ```
-browser ──► nginx ──auth_request──► htwicket /auth ──► 200 + X-Remote-User-* headers
+browser ──► nginx ──auth_request──► HTWicket /auth ──► 200 + X-Remote-User-* headers
                 │                        (cookie or Basic, CEL-derived headers)
                 └──► your app (trusts headers from nginx)
 
-htwicket /login /logout /account /admin — login form, self-service, user management UI
+HTWicket /login /logout /account /admin — login form, self-service, user management UI
 
 .htpasswd (passwords) + .htwicket.toml (fields) — plain files, also editable via admin CLI
 ```
@@ -43,7 +43,7 @@ htwicket /login /logout /account /admin — login form, self-service, user manag
 
 Demo with Docker:
 
-`make demo` builds a throwaway Docker container — htwicket behind
+`make demo` builds a throwaway Docker container — HTWicket behind
 nginx guarding a demo app — at <http://localhost:8080/>. See [demo/README.md](demo/README.md).
 
 Install on Debian / Ubuntu:

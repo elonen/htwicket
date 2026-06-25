@@ -1,6 +1,6 @@
-# htwicket demo
+# HTWicket demo
 
-Throwaway Compose playground: htwicket — as the production scratch/distroless image
+Throwaway Compose playground: HTWicket — as the production scratch/distroless image
 (`Dockerfile.runtime`, including its `healthz` HEALTHCHECK, which gates nginx startup) —
 behind stock nginx (`auth_request`) guarding a PHP page that dumps the forwarded
 `X-Remote-User-*` headers and the decoded session-JWT claims.

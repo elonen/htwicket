@@ -1,6 +1,6 @@
 [package]
 name = "htwicket"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Auth gateway + .htpasswd user manager for nginx auth_request"
 license = "MIT OR Apache-2.0"
@@ -28,7 +28,7 @@ assets = [
 ]
 conf-files = ["/etc/htwicket.toml"]
 maintainer-scripts = "debian/"
-# Install the unit but neither enable (boot start) nor start it: htwicket needs
+# Install the unit but neither enable (boot start) nor start it: HTWicket needs
 # /etc/htwicket.toml configured and at least one user before it can run. The
 # admin finishes with `systemctl enable --now htwicket`.
 systemd-units = { enable = false, start = false }

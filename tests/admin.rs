@@ -263,9 +263,9 @@ fn account_visibility_and_editability() {
 
 #[test]
 fn signed_out_login_redirect_rd_is_base_path_qualified() {
-    // Signed out, htwicket's own pages bounce to login. The rd must carry the base path — a bare
+    // Signed out, HTWicket's own pages bounce to login. The rd must carry the base path — a bare
     // "/admin"/"/account" resolves against the origin root and, in-path, lands on the proxied app
-    // instead of htwicket's page. nginx-fed rd values (the protected app) are already root-relative.
+    // instead of HTWicket's page. nginx-fed rd values (the protected app) are already root-relative.
     let srv = spawn("");
     for route in ["/admin", "/account"] {
         let resp = client().get(format!("{}{route}", srv.base)).send().unwrap();

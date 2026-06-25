@@ -1,4 +1,4 @@
-# Translating htwicket
+# Translating HTWicket
 
 The UI uses gettext-style catalogs. **English is the source language** — the `msgid` *is* the
 English string, so there is no `en` catalog and any missing translation falls back to the English

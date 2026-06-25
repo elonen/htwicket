@@ -49,7 +49,7 @@ Defaults in parentheses. See the example for inline guidance.
 
 ## Fields, headers, claims
 
-htwicket core knows no app-specific attribute. You declare them; CEL turns them into outputs.
+HTWicket core knows no app-specific attribute. You declare them; CEL turns them into outputs.
 
 **`[fields.<name>]`** — a per-user attribute stored in the sidecar. `<name>` must be a CEL
 identifier (`[A-Za-z_][A-Za-z0-9_]*`).
@@ -96,7 +96,7 @@ glob, to avoid being web-served). Managed by `src/state.rs`.
   (`$argon2*`); **writes the `password_hash` algorithm** (default bcrypt, keeping the file usable
   with plain nginx `auth_basic`; `argon2id` forfeits that — see [security.md](security.md)).
 - **`.htwicket.toml`** (sidecar) — `[users."<name>"]` table per user holding the declared fields.
-  Fields htwicket doesn't know are **warned about but preserved verbatim**, never dropped.
+  Fields HTWicket doesn't know are **warned about but preserved verbatim**, never dropped.
 - **`.htwicket.lock`** — advisory `flock`, shared by server *and* CLI.
 
 A user may exist in either file alone: password-only (no fields) or sidecar-only (fields, no

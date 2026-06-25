@@ -1,6 +1,6 @@
 # Security model
 
-htwicket trusts exactly one peer — nginx — and faces no traffic directly. The session mechanics it
+HTWicket trusts exactly one peer — nginx — and faces no traffic directly. The session mechanics it
 references here live in [auth-flow.md](auth-flow.md).
 
 ## Sessions & tokens
@@ -52,7 +52,7 @@ the cache until its 5-min TTL expires or the file is reloaded, even while the fo
   which keeps `.htpasswd` verifiable by plain nginx `auth_basic` as an escape hatch.
 - **`argon2id`** is opt-in: stronger, memory-hard (`Argon2::default()` — v19, m=19 MiB, t=2, p=1),
   but argon2 lines are **not** readable by nginx `auth_basic`, so that escape hatch is forfeited
-  (`basic_auth_passthrough` is unaffected — htwicket verifies there, not nginx).
+  (`basic_auth_passthrough` is unaffected — HTWicket verifies there, not nginx).
 - Verification reads everything either way: DES, `$apr1$`, `{SHA}`, `$1$`, `$5$`/`$6$`, bcrypt, and
   argon2. Opt-in `upgrade_hash_on_login` rehashes any entry **not already in `password_hash`** —
   legacy *and* the other strong algorithm — to it the moment a user logs in.

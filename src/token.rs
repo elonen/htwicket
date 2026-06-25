@@ -25,7 +25,7 @@ impl Keys {
     pub fn new(secret: &[u8]) -> Self {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_issuer(&[ISSUER]);
-        validation.validate_aud = false; // htwicket tokens carry no audience
+        validation.validate_aud = false; // HTWicket tokens carry no audience
         Keys {
             enc: EncodingKey::from_secret(secret),
             dec: DecodingKey::from_secret(secret),

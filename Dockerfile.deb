@@ -1,7 +1,7 @@
-# Builder image for producing htwicket .deb packages with cargo-deb.
+# Builder image for producing HTWicket .deb packages with cargo-deb.
 # `make debian-docker` builds this once per Debian release (DEBIAN_VER) and
 # architecture (via --platform), then runs `make debian-local` inside it as
-# root. htwicket is pure Rust with no native library deps, so rust:slim's
+# root. HTWicket is pure Rust with no native library deps, so rust:slim's
 # bundled gcc/libc toolchain is all that's needed to compile and link.
 ARG DEBIAN_VER=trixie
 FROM rust:1-slim-${DEBIAN_VER} AS builder

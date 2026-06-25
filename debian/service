@@ -1,5 +1,5 @@
 [Unit]
-Description=htwicket auth gateway for nginx auth_request
+Description=HTWicket auth gateway for nginx auth_request
 After=network.target
 
 [Service]

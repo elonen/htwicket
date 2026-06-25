@@ -1,4 +1,4 @@
-# Compose demo: using htwicket a scratch/distroless Docker image
+# Compose demo: using HTWicket a scratch/distroless Docker image
 # Run via `make demo` (builds + seeds users first).
 # Production adaptation (published image, TLS, secrets, bootstrap): docs/deployment.md -> Docker Compose.
 name: htwicket-demo

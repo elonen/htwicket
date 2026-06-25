@@ -1,4 +1,4 @@
-# Tiny runtime image: a fully static (musl) htwicket on distroless. htwicket is
+# Tiny runtime image: a fully static (musl) HTWicket on distroless. HTWicket is
 # pure Rust with zero C deps, so musl is just a link target — nothing to port,
 # and the result runs on a ~2 MB base with no glibc-version coupling.
 #

@@ -9,7 +9,7 @@ build:
 	cargo build --release
 
 # Fully static musl binary → runs on scratch/distroless, no glibc-version coupling.
-# htwicket is pure Rust with zero C deps, so musl is just a link target — nothing to
+# HTWicket is pure Rust with zero C deps, so musl is just a link target — nothing to
 # port. Needs the target + musl linker:
 #   rustup target add $(MUSL_TARGET)   # plus: apt-get install musl-tools (Debian/Ubuntu)
 # Used by Dockerfile.runtime and the CI image job. uname's arm64 (macOS) → aarch64 (rustup).
@@ -166,7 +166,7 @@ dist_deb/built.$(ARCH).stamp: $(RUST_DEPS) $(DEB_DEPS)
 # pullable are skipped (e.g. a next-stable codename before it ships); a failure
 # prints which target was building.
 debian-docker:
-	@echo "Building htwicket .deb packages for multiple Debian releases × architectures..."
+	@echo "Building HTWicket .deb packages for multiple Debian releases × architectures..."
 	rm -rf dist_deb && mkdir -p dist_deb
 	set -e; \
 	trap 'echo "" >&2; echo "######## debian-docker FAILED while building: $$CURRENT ########" >&2' ERR; \
@@ -175,7 +175,7 @@ debian-docker:
 		echo "=== Checking base image availability for Debian $$debver ==="; \
 		if docker build --platform linux/amd64 -q - <<< "FROM rust:1-slim-$$debver" >/dev/null 2>&1; then \
 			for plat in arm64 amd64; do \
-				echo "--- Building htwicket for $$debver/$$plat ---"; \
+				echo "--- Building HTWicket for $$debver/$$plat ---"; \
 				CURRENT="$$debver/$$plat"; \
 				DEBIAN_VER=$$debver TARGET_ARCH=$$plat $(MAKE) --no-print-directory debian-docker-one; \
 			done; \

@@ -379,7 +379,7 @@ mod tests {
             "bob:$2y$05$Ftpcc093Aifqr/esFXS5XexMgXGY7SDuA7tGgcXFV8/LAyo5/yope\n",
         )
         .unwrap();
-        // App-foreign field htwicket knows nothing about — must survive a write.
+        // App-foreign field HTWicket knows nothing about — must survive a write.
         fs::write(&sidecar, "[users.bob]\nquota_mb = 500\n").unwrap();
 
         let mut db = UserDb::load(cfg_with_fields(htpasswd)).unwrap();

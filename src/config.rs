@@ -61,7 +61,7 @@ pub struct Config {
     #[serde(default)]
     pub app_title_html: Option<String>,
     pub superadmins: Superadmins,
-    /// App-specific user attribute schema; htwicket core is app-agnostic.
+    /// App-specific user attribute schema; HTWicket core is app-agnostic.
     #[serde(default)]
     pub fields: BTreeMap<String, FieldSpec>,
     /// /auth 200-response headers, CEL over {username, fields.*}. X-Remote-User-Id is always sent.
@@ -75,7 +75,7 @@ pub struct Config {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Superadmins {
-    /// CEL: who may access /admin (admins of htwicket itself, not of the proxied app).
+    /// CEL: who may access /admin (admins of HTWicket itself, not of the proxied app).
     pub expr: String,
 }
 
@@ -209,7 +209,7 @@ pub struct Overrides {
 }
 
 impl Config {
-    /// Absolute path to one of htwicket's own pages: joins `route` onto `base_path`, e.g.
+    /// Absolute path to one of HTWicket's own pages: joins `route` onto `base_path`, e.g.
     /// `self_url("/account")` -> `/htwicket/account`. Use for every in-app link/redirect target so it
     /// resolves under the proxy mount, not the origin root (where the proxied app lives). `route` must
     /// start with `/`; `base_path` carries no trailing one.

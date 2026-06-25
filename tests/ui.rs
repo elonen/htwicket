@@ -1,5 +1,5 @@
 //! Page chrome: the base-path landing page, whitelabel branding (`app_title_html` rendered raw +
-//! the htwicket footer kept on /admin only), and the login form's labels + heading.
+//! the HTWicket footer kept on /admin only), and the login form's labels + heading.
 
 mod common;
 
@@ -28,7 +28,7 @@ fn index_links_to_account_and_admin() {
 fn app_title_html_is_raw_everywhere_footer_admin_only() {
     let srv = spawn_with("", "app_title_html = \"<b id=brand>ACME</b>\"\n");
 
-    // Login page: branding rendered unescaped; the htwicket footer is gone (whitelabel default).
+    // Login page: branding rendered unescaped; the HTWicket footer is gone (whitelabel default).
     let login = reqwest::blocking::get(format!("{}/login", srv.base))
         .unwrap()
         .text()

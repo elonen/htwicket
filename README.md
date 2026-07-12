@@ -1,8 +1,6 @@
-# HTWicket - Modernized .htaccess user management web UI, CLI with JWT verifier
+# HTWicket – Modern JWT auth against `.htpasswd` for Nginx/Caddy/others + admin GUI for user/group management
 
-Small auth gateway + user manager for `auth_request` (nginx, or other reverse proxies).
-Provides a web GUI for editing `.htpasswd`, upgrading its hashes to a modern algorithm,
-and providing custom user data for backend apps through headers and/or JWT.
+Optionally upgrades password hash to bcrypt/argon2 on login, and provides additional user metadata in JWT cookie. 
 
 <table><tr>
 <td width="50%">
@@ -17,7 +15,7 @@ Admin UI for user management with custom fields:
 
 - **Backwards compatible**: verifies existing `.htpasswd` files as-is (DES crypt, `$apr1$`,
   `$1$`, `$5$`/`$6$`, bcrypt, argon2). Writes bcrypt by default, so the file stays usable with
-  plain nginx `auth_basic` as an escape hatch; opt into more secure `argon2id` if you don't need that.
+  plain nginx `auth_basic` as an escape hatch; opt into even more secure `argon2id` if you don't need that.
 - **Modern sessions**: login form + JWT cookie (real logout, sliding expiry, sessions end on
   password change). Optional `Authorization: Basic` passthrough for scripted clients.
 - **Custom user attributes**: declare fields in config (`is_admin`, `can_upload`, ...),
@@ -29,14 +27,28 @@ Admin UI for user management with custom fields:
 
 ## Overview graph
 
+```mermaid
+flowchart LR
+    browser[Browser] --> nginx[Nginx]
+
+    nginx -- "auth_request" --> auth["HTWicket /auth"]
+
+    auth -- "200 + X-Remote-User-* headers<br/>(cookie or Basic, CEL-derived headers)" --> nginx
+
+    nginx --> app["Your app"]
 ```
-browser ──► nginx ──auth_request──► HTWicket /auth ──► 200 + X-Remote-User-* headers
-                │                        (cookie or Basic, CEL-derived headers)
-                └──► your app (trusts headers from nginx)
 
-HTWicket /login /logout /account /admin — login form, self-service, user management UI
+```
+Routes:
+  /login     - login form
+  /logout    - terminate session
+  /account   - self service page
+  /admin     - manage users and attribs
+  /healthz   - service status
 
-.htpasswd (passwords) + .htwicket.toml (fields) — plain files, also editable via admin CLI
+Files:
+  .htpasswd (password hashes)
+  .htwicket.toml (extta metadata)
 ```
 
 ## Quick start

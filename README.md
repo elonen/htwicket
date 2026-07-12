@@ -4,11 +4,9 @@ Optionally upgrades password hash to bcrypt/argon2 on login, and provides additi
 
 <table><tr>
 <td width="50%">
-Login form authenticates against .htpasswd:
 <img src="docs/img/shot_login.png" width="100%">
 </td>
 <td width="50%">
-Admin UI for user management with custom fields:
 <img src="docs/img/shot_admin.png" width="100%">
 </td>
 </tr></table>

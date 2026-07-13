@@ -1,6 +1,6 @@
 [package]
 name = "htwicket"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Auth gateway + .htpasswd user manager for nginx auth_request"
 license = "MIT OR Apache-2.0"

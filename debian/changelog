@@ -1,3 +1,11 @@
+htwicket (0.1.3) unstable; urgency=low
+
+  * Use the __Host- cookie prefix (__Host-htwicket_session) when session
+    cookies are Secure, so browsers reject cookies not set by the exact
+    host over HTTPS on path /.
+
+ -- Jarno Elonen <elonen@iki.fi>  Tue, 14 Jul 2026 12:00:00 +0300
+
 htwicket (0.1.2) unstable; urgency=low
 
   * Rename project to HTWicket (display/branding only).

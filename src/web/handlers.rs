@@ -39,7 +39,7 @@ pub(super) async fn auth(State(state): State<AppState>, headers: HeaderMap) -> H
     //    expired signature, unknown user, rotated password), deny — never fall through to Basic. Else
     //    a forged or stale cookie could ride along on a Basic-authorized 200, where a backend that
     //    reads the cookie would trust it.
-    if let Some(token) = cookie_value(&headers, token::COOKIE_NAME) {
+    if let Some(token) = cookie_value(&headers, token::cookie_name(&state.cfg)) {
         let granted =
             token::verify_jwt(&token, &state.keys, state.cfg.session_max_days).and_then(|claims| {
                 let user = db.users.get(&claims.sub)?;

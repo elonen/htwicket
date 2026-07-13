@@ -23,7 +23,7 @@ nginx redirects the browser to the login form, remembering the original URL in `
 The handler tries each credential source in order and stops at the first that works
 (`src/web/handlers.rs::auth`):
 
-1. **Session cookie** `htwicket_session` — verify the JWT (below); confirm the user still exists
+1. **Session cookie** `__Host-htwicket_session` — verify the JWT (below); confirm the user still exists
    and the password fingerprint still matches. On success emit headers and maybe re-mint the cookie.
 2. **`Authorization: Basic`** — only if `basic_auth_passthrough = true`. Verify against `.htpasswd`
    (via a cache). Never mints a cookie. For scripted/legacy clients.
@@ -62,8 +62,10 @@ falls back to `/`. Wrong password → record failure, re-render with the usernam
 
 ## The session JWT
 
-Cookie `htwicket_session`: `HttpOnly; SameSite=Lax; Path=/; Max-Age=<idle>` plus `Secure` unless
-`insecure_cookies` is configured (for localhost / HTTP testing).
+Cookie `__Host-htwicket_session`: `HttpOnly; SameSite=Lax; Path=/; Max-Age=<idle>; Secure`. With
+`insecure_cookies` (localhost / HTTP testing) it drops `Secure` and is named plain
+`htwicket_session` — the `__Host-` prefix requires `Secure`, so a browser would reject the
+prefixed name over plain http and login would loop. See [security.md](security.md#sessions--tokens).
 Signed **HS256, pinned** — the token header's `alg` is ignored, so a token can't
 downgrade the verifier. Stateless: HTWicket keeps no server-side session list.
 

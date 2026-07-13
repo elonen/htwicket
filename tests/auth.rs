@@ -1,9 +1,9 @@
 //! Login flow, /auth header outputs, Basic passthrough, the open-redirect + Origin/CSRF guards,
-//! and sliding session re-mint.
+//! the `__Host-` session cookie, and sliding session re-mint.
 
 mod common;
 
-use common::{PW, client, spawn};
+use common::{PW, client, spawn, spawn_secure_cookies};
 
 #[test]
 fn login_then_auth_emits_cel_headers() {
@@ -126,6 +126,102 @@ fn csrf_origin_guard_on_post() {
         .send()
         .unwrap();
     assert_eq!(ok.status(), 303, "same-origin POST should pass the guard");
+}
+
+#[test]
+fn secure_cookies_get_the_host_prefix_and_no_bare_fallback() {
+    // With Secure cookies (the production default) the session cookie is `__Host-`-prefixed, which
+    // browsers only accept with Secure + no Domain + Path=/ — so no sibling host under the same
+    // registrable domain can inject or shadow one. Assert the emitted attributes really satisfy the
+    // prefix (a stray Domain, or a missing Path=/, and the browser drops the cookie entirely →
+    // silent login loop), and that the UNPREFIXED name is not honoured: accepting it as a fallback
+    // would hand the injection path straight back.
+    let srv = spawn_secure_cookies("");
+    let c = client();
+
+    let r = c
+        .post(format!("{}/login", srv.base))
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    assert_eq!(r.status(), 303);
+    let set = r
+        .headers()
+        .get("set-cookie")
+        .expect("login must set a session cookie")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    assert!(
+        set.starts_with("__Host-htwicket_session="),
+        "secure mode must use the __Host- prefix, got: {set}"
+    );
+    assert!(set.contains("Secure"), "__Host- requires Secure: {set}");
+    assert!(set.contains("Path=/"), "__Host- requires Path=/: {set}");
+    assert!(
+        !set.to_lowercase().contains("domain="),
+        "__Host- forbids a Domain attribute: {set}"
+    );
+
+    let token = set
+        .split("__Host-htwicket_session=")
+        .nth(1)
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+
+    let prefixed = c
+        .get(format!("{}/auth", srv.base))
+        .header(
+            reqwest::header::COOKIE,
+            format!("__Host-htwicket_session={token}"),
+        )
+        .send()
+        .unwrap();
+    assert_eq!(
+        prefixed.status(),
+        200,
+        "the __Host- cookie must authenticate"
+    );
+
+    let bare = c
+        .get(format!("{}/auth", srv.base))
+        .header(reqwest::header::COOKIE, format!("htwicket_session={token}"))
+        .send()
+        .unwrap();
+    assert_eq!(
+        bare.status(),
+        401,
+        "the unprefixed name must NOT be accepted in secure mode (that's the injection path)"
+    );
+}
+
+#[test]
+fn insecure_cookies_keep_the_bare_name() {
+    // The prefix requires Secure, so plain-http deployments must keep the unprefixed name — a
+    // `__Host-` cookie without Secure is rejected by the browser outright and login would loop.
+    let srv = spawn(""); // harness default: insecure_cookies = true
+    let c = client();
+    let r = c
+        .post(format!("{}/login", srv.base))
+        .form(&[("username", "admin"), ("password", PW)])
+        .send()
+        .unwrap();
+    let set = r
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        set.starts_with("htwicket_session="),
+        "insecure mode must not use the __Host- prefix, got: {set}"
+    );
+    assert!(!set.contains("Secure"), "insecure mode drops Secure: {set}");
 }
 
 #[test]

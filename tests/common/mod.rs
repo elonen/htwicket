@@ -40,9 +40,22 @@ pub fn spawn(sidecar: &str) -> Server {
     spawn_with(sidecar, "")
 }
 
+/// As `spawn`, but with `Secure` cookies (the production default), so the session cookie carries
+/// the `__Host-` prefix. Overridden by env, since the TOML below already pins `insecure_cookies`.
+/// The harness still speaks plain http — only the emitted cookie attributes change, so tests here
+/// set the `Cookie` header themselves rather than relying on reqwest's store (which, correctly,
+/// won't send a `Secure` cookie back over http).
+pub fn spawn_secure_cookies(sidecar: &str) -> Server {
+    spawn_inner(sidecar, "", &[("HTWICKET_INSECURE_COOKIES", "false")])
+}
+
 /// As `spawn`, but `extra` is spliced in among the scalar top-level keys (must precede any
 /// `[table]`), letting a test set keys like `password_hash` / `upgrade_hash_on_login`.
 pub fn spawn_with(sidecar: &str, extra: &str) -> Server {
+    spawn_inner(sidecar, extra, &[])
+}
+
+fn spawn_inner(sidecar: &str, extra: &str, env: &[(&str, &str)]) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let htpasswd = dir.path().join(".htpasswd");
     std::fs::write(&htpasswd, format!("admin:{PW_HASH}\nbob:{PW_HASH}\n")).unwrap();
@@ -91,6 +104,7 @@ expr = "fields.display_name != '' ? fields.display_name : username"
         .arg("-c")
         .arg(&config)
         .arg("serve")
+        .envs(env.iter().copied())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

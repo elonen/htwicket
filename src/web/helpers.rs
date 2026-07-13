@@ -31,7 +31,7 @@ pub(super) fn get_and_validate_token_claims(
     headers: &HeaderMap,
     state: &AppState,
 ) -> Option<Claims> {
-    let token = cookie_value(headers, token::COOKIE_NAME)?;
+    let token = cookie_value(headers, token::cookie_name(&state.cfg))?;
     token::verify_jwt(&token, &state.keys, state.cfg.session_max_days)
 }
 
@@ -119,7 +119,7 @@ pub(super) fn cookie_header(token: &str, cfg: &Config) -> Result<HeaderValue, Ap
     } else {
         cfg.session_idle_hours as i64 * 3600
     };
-    let c = cookie::Cookie::build((token::COOKIE_NAME, token))
+    let c = cookie::Cookie::build((token::cookie_name(cfg), token))
         .http_only(true)
         .same_site(cookie::SameSite::Lax)
         .path("/")

@@ -13,6 +13,15 @@ references here live in [auth-flow.md](auth-flow.md).
   fingerprint check — changing a password invalidates every outstanding session for that user. Full
   mechanics: [auth-flow.md](auth-flow.md#revocation--password-change).
 - **Cookie flags** — `HttpOnly; SameSite=Lax; Path=/`, plus `Secure` unless `insecure_cookies`.
+- **`__Host-` prefix.** The cookie is named `__Host-htwicket_session`. Cookies aren't origin-scoped:
+  without the prefix, any sibling host under the same registrable domain — a compromised
+  `wiki.example.com`, or a network attacker on *any* plain-http host there — can set
+  `htwicket_session` with `Domain=example.com` and shadow the real one, which is a session-fixation
+  path that `SameSite` does nothing about. Browsers accept a `__Host-` cookie only with `Secure`, no
+  `Domain`, and `Path=/`, and only from a secure origin — so no other host can create one. HTWicket
+  already met all three conditions; the prefix makes the browser *enforce* them. The unprefixed name
+  is **not** accepted as a fallback (that would hand the injection path straight back).
+  `insecure_cookies` keeps the bare name, since the prefix requires `Secure`.
 
 ## CSRF
 

@@ -1,6 +1,6 @@
-//! Session JWT in cookie `htwicket_session`: HttpOnly, SameSite=Lax, Path=/,
-//! Secure unless insecure_cookies. HS256 pinned — token-header alg is ignored.
-//! Stateless; the only revocation is pwd_fp mismatch (password change rotates it).
+//! Session JWT in cookie `__Host-htwicket_session` (`htwicket_session` when insecure_cookies):
+//! HttpOnly, SameSite=Lax, Path=/, Secure unless insecure_cookies. HS256 pinned — token-header
+//! alg is ignored. Stateless; only revocation is pwd_fp mismatch (password change rotates it).
 
 use std::fs;
 use std::io::Write;
@@ -10,8 +10,30 @@ use anyhow::Context;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
-pub const COOKIE_NAME: &str = "htwicket_session";
+use crate::config::Config;
+
+const COOKIE_NAME_INSECURE: &str = "htwicket_session";
+const COOKIE_NAME_HOST: &str = "__Host-htwicket_session";
 const ISSUER: &str = "htwicket";
+
+/// The session cookie's name, which depends on whether we can set `Secure`.
+///
+/// Cookies aren't origin-scoped: without the prefix, any sibling host under the same registrable
+/// domain — a compromised `wiki.example.com`, or a network attacker on any plain-http host there —
+/// can set `htwicket_session` with `Domain=example.com` and shadow the real one, which is a session
+/// fixation path (SameSite does nothing against it). Browsers only accept a `__Host-` cookie that
+/// has `Secure`, no `Domain`, and `Path=/`, and only from a secure origin, so no other host can
+/// create one. We already meet all three conditions — the prefix just makes the browser enforce it.
+///
+/// The prefix REQUIRES `Secure`, so `insecure_cookies` (plain-http demo/localhost) keeps the bare
+/// name; a `__Host-` cookie without `Secure` would be rejected outright and login would loop.
+pub fn cookie_name(cfg: &Config) -> &'static str {
+    if cfg.insecure_cookies {
+        COOKIE_NAME_INSECURE
+    } else {
+        COOKIE_NAME_HOST
+    }
+}
 
 /// HS256 keys + validation derived from the secret once at startup — building
 /// EncodingKey/DecodingKey/Validation per request is pure constant work.

@@ -44,7 +44,7 @@ location @login { return 302 /htwicket/login?rd=$request_uri; }
 - One `auth_request_set` + `proxy_set_header` pair **per `[headers.*]`** you want forwarded;
   `X-Remote-User-Id` is always present.
 - The backend's identity comes only from these `X-Remote-User-*` headers, never from the
-  `htwicket_session` cookie (HTWicket's private token — the app can't verify it). The cookie still
+  `__Host-htwicket_session` cookie (HTWicket's private token — the app can't verify it). The cookie still
   rides to the backend by default (`Path=/`); strip it where practical, but a blanket
   `proxy_set_header Cookie ""` also drops the app's own cookies, so selective stripping needs an
   nginx `map`/regex.
